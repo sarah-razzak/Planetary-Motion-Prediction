@@ -580,6 +580,13 @@ if X_train is not None:
                         min_len = min(len(actual_vis), len(lstm_pred))
                         lstm_rmse = calculate_rmse(actual_vis[:min_len], lstm_pred[:min_len])
                         st.write(f"**RMSE (Validation)**: {lstm_rmse:.6f}")
+                        
+                        # Overfitting indicator
+                        if lstm_losses[-1] < 0.001 and lstm_rmse > 0.3:
+                            st.warning("⚠️ **Overfitting Detected**: Low training loss but high validation RMSE. Try:")
+                            st.write("  - Reducing LSTM epochs")
+                            st.write("  - Lowering learning rate")
+                            st.write("  - Adding dropout regularization")
                     st.write(f"**Architecture**: 1 LSTM layer (64 hidden dims)")
                     if quantization_bits:
                         st.write(f"**Quantization**: {quantization_bits}-bit")
