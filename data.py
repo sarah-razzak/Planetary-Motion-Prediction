@@ -259,15 +259,56 @@ def fetch_apophis_data(start_date='2026-01-01', end_date='2030-01-01'):
     X = data_array[:-1]  # All but last row
     y = data_array[1:, 1:4]  # X, Y, Z of next time step
     
-    # Normalize features and labels
-    # This is crucial: without normalization, the gradient descent algorithm
-    # struggles with the different scales of time, position (AU), and velocity (AU/day).
-    # StandardScaler ensures all features contribute equally to the error surface.
-    scaler_X = StandardScaler()
-    scaler_y = StandardScaler()
+    # CRITICAL: Physics-Aware Normalization
+    # Position (X, Y, Z) and velocity (VX, VY, VZ) have a physical relationship: v = dx/dt
+    # If normalized separately, the LSTM cannot learn this relationship.
+    # Solution: Normalize position and velocity together to preserve their ratio.
     
-    X_scaled = scaler_X.fit_transform(X)
-    y_scaled = scaler_y.fit_transform(y)
+    # Extract position and velocity columns
+    # X format: [Time, X, Y, Z, VX, VY, VZ]
+    positions = X[:, 1:4]  # X, Y, Z
+    velocities = X[:, 4:7]  # VX, VY, VZ
+    time_feature = X[:, 0:1]  # Time (keep separate)
+    
+    # Combine all position and velocity data to normalize together
+    # This preserves the physical relationship: velocity scale relative to position scale
+    all_pos_vel = np.vstack([positions, velocities, y])  # Include y positions too
+    
+    # Create a single scaler for all position/velocity data
+    pos_vel_scaler = StandardScaler()
+    all_pos_vel_scaled = pos_vel_scaler.fit_transform(all_pos_vel)
+    
+    # Split back
+    n_samples = len(X)
+    positions_scaled = all_pos_vel_scaled[:n_samples]
+    velocities_scaled = all_pos_vel_scaled[n_samples:2*n_samples]
+    y_scaled = all_pos_vel_scaled[2*n_samples:]
+    
+    # Normalize time separately (it's not physically related to position/velocity scale)
+    time_scaler = StandardScaler()
+    time_scaled = time_scaler.fit_transform(time_feature)
+    
+    # Reconstruct X with normalized components
+    X_scaled = np.hstack([time_scaled, positions_scaled, velocities_scaled])
+    
+    # Create scalers for inverse transform (needed for visualization)
+    # For X: we need to be able to inverse transform the full feature vector
+    # Store the component scalers in a custom object or use the original scaler
+    scaler_X = StandardScaler()
+    scaler_X.fit(X)  # Fit on original for inverse transform compatibility
+    # Override with physics-aware scaling for mean and scale
+    scaler_X.mean_ = np.hstack([time_scaler.mean_.flatten(), 
+                                pos_vel_scaler.mean_[:3], 
+                                pos_vel_scaler.mean_[:3]])
+    scaler_X.scale_ = np.hstack([time_scaler.scale_.flatten(), 
+                                 pos_vel_scaler.scale_[:3], 
+                                 pos_vel_scaler.scale_[:3]])
+    
+    # For y: use position scaler (y is position, same as X positions)
+    scaler_y = StandardScaler()
+    scaler_y.fit(y)  # Fit on original
+    scaler_y.mean_ = pos_vel_scaler.mean_[:3]  # Use position mean from joint scaler
+    scaler_y.scale_ = pos_vel_scaler.scale_[:3]  # Use position scale from joint scaler
     
     print(f"Successfully fetched {len(X_scaled)} data points")
     print(f"Feature shape: {X_scaled.shape}")
