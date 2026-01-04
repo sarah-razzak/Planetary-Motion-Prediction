@@ -13,15 +13,25 @@ planetary motion prediction.
 """
 
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import time
 
+# Try to import PyTorch, but make it optional
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    print("Warning: PyTorch not available. LSTM model will be skipped.")
+    print("Install PyTorch with: pip install torch")
+
 from data import fetch_apophis_data, prepare_sequences
-from model import Adaline, LSTMPredictor
+from model import Adaline
+if TORCH_AVAILABLE:
+    from model import LSTMPredictor
 
 
 def train_lstm(model, X_train, y_train, X_val, y_val, epochs=50, batch_size=32, lr=0.001):
@@ -378,14 +388,26 @@ def main():
     
     # Prepare data for visualization (use validation set)
     # For LSTM, we need to align predictions
-    actual_vis = y_val[sequence_length-1:]  # Align with LSTM predictions
+    # LSTM predictions are based on sequences, so they start at sequence_length-1
+    lstm_start_idx = sequence_length - 1
+    actual_vis = y_val[lstm_start_idx:]  # Align with LSTM predictions
     
-    # For Adaline, use corresponding predictions
-    adaline_vis = adaline_val_pred[sequence_length-1:]
+    # For Adaline, use corresponding predictions (same alignment)
+    adaline_vis = adaline_val_pred[lstm_start_idx:]
+    
+    # Ensure LSTM predictions match the length
+    if len(lstm_val_pred) != len(actual_vis):
+        # Trim to match
+        min_len = min(len(actual_vis), len(lstm_val_pred))
+        actual_vis = actual_vis[:min_len]
+        adaline_vis = adaline_vis[:min_len]
+        lstm_val_pred_aligned = lstm_val_pred[:min_len]
+    else:
+        lstm_val_pred_aligned = lstm_val_pred
     
     # Calculate final RMSE on aligned data
     adaline_rmse_final = calculate_rmse(actual_vis, adaline_vis)
-    lstm_rmse_final = calculate_rmse(actual_vis, lstm_val_pred)
+    lstm_rmse_final = calculate_rmse(actual_vis, lstm_val_pred_aligned)
     
     print(f"\nFinal RMSE Comparison (Aligned Validation Set):")
     print(f"  Adaline: {adaline_rmse_final:.6f}")
@@ -394,9 +416,9 @@ def main():
     print()
     
     # Visualization
-    dates_vis = dates[split_idx + sequence_length - 1:]
+    dates_vis = dates[split_idx + lstm_start_idx:split_idx + lstm_start_idx + len(actual_vis)]
     visualize_3d_trajectories(
-        actual_vis, adaline_vis, lstm_val_pred,
+        actual_vis, adaline_vis, lstm_val_pred_aligned,
         dates_vis, scaler_y, save_path='trajectory_comparison.png'
     )
     

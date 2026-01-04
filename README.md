@@ -2,25 +2,11 @@
 
 > *"The Geometry of Data meets the Gradient Descent"*
 
-A journey through machine learning history, exploring how 18th-century Least Squares (Gauss) evolved into 1960s Adaline (Widrow-Hoff) and ultimately to 2026-era LSTMs, all applied to the timeless problem of predicting planetary motion.
-
-## 📚 Historical Context
-
-This project is inspired by **Anil Ananthaswamy's "Why Machines Learn"** (Chapters 1-5), which explores:
-
-- **The Geometry of Data**: How mathematical models represent relationships in high-dimensional space
-- **Gradient Descent**: The optimization technique that finds the "bottom of the bowl" in error surfaces
-- **The Geometrical Crisis**: Why linear models struggle with non-linear phenomena like elliptical orbits
-
-### The Evolution
-
-1. **18th Century - Gauss's Least Squares**: The foundation of regression, used to predict planetary positions from noisy observations
-2. **1960s - Adaline (Widrow-Hoff)**: An adaptive linear neuron that learns through the Delta Rule, bridging Gauss and Rosenblatt
-3. **2026-era - LSTM**: Long Short-Term Memory networks that capture sequential patterns through hidden states
+A machine learning project that implements Adaline (1960s) and LSTM (2026-era) models to predict the trajectory of **Asteroid Apophis (99942)** using real telemetry data from NASA JPL Horizons.
 
 ## 🎯 Project Overview
 
-**The Ancient Predictor** implements all three approaches to predict the trajectory of **Asteroid Apophis (99942)** from January 2026 to January 2030, using real telemetry data from NASA JPL Horizons.
+**The Ancient Predictor** compares historical and modern machine learning approaches to predict planetary motion, using real telemetry data from NASA JPL Horizons.
 
 ### Key Features
 
@@ -34,18 +20,33 @@ This project is inspired by **Anil Ananthaswamy's "Why Machines Learn"** (Chapte
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.8 or higher (Python 3.12 recommended)
 - pip package manager
 
 ### Setup
 
 1. Clone this repository:
 ```bash
-git clone <repository-url>
-cd planetary_motion_with_LMS
+git clone https://github.com/sarah-razzak/Planetary-Motion-Prediction.git
+cd Planetary-Motion-Prediction
 ```
 
-2. Install dependencies:
+2. Create a virtual environment:
+```bash
+python3 -m venv venv
+```
+
+3. Activate the virtual environment:
+   - On macOS/Linux:
+     ```bash
+     source venv/bin/activate
+     ```
+   - On Windows:
+     ```bash
+     venv\Scripts\activate
+     ```
+
+4. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
@@ -71,12 +72,13 @@ This will:
 ### Module Structure
 
 ```
-planetary_motion_with_LMS/
+Planetary-Motion-Prediction/
 ├── data.py          # Data acquisition and preprocessing
 ├── model.py         # Adaline and LSTM model implementations
 ├── main.py          # Main execution script
 ├── requirements.txt # Python dependencies
-└── README.md        # This file
+├── README.md        # This file
+└── venv/            # Virtual environment (not in git)
 ```
 
 ## 🔬 Technical Details
@@ -136,47 +138,6 @@ The script outputs:
 - **3D Trajectory Plots** comparing actual NASA data with predictions
 - **Error Distribution** histograms
 
-## 🎓 Educational Value
-
-This project serves as a bridge between:
-- **Historical Mathematics**: Gauss's Least Squares and the geometry of optimization
-- **1960s Machine Learning**: Rosenblatt's Perceptron and Widrow-Hoff's Adaline
-- **Modern Deep Learning**: Recurrent neural networks and sequential modeling
-
-The code comments extensively reference:
-- The "Error Surface" and gradient descent
-- The "Geometrical Crisis" of linear models
-- How hidden states solve non-linearity challenges
-
-## 📝 Commit Messages
-
-Here are 5 high-quality commit messages that tell the story of the project:
-
-1. **Initial commit: Data acquisition module with NASA JPL Horizons integration**
-   - Implemented `fetch_apophis_data()` using astroquery.jplhorizons
-   - Added StandardScaler normalization to prevent gradient descent oscillations
-   - Created sequence preparation utilities for LSTM training
-
-2. **Implement Adaline model with Widrow-Hoff Delta Rule**
-   - Pure NumPy implementation of 1960s Adaline architecture
-   - Linear activation function for regression in 3D space
-   - MSE tracking to visualize error surface journey
-
-3. **Add PyTorch LSTM model with hidden state memory**
-   - Implemented LSTMPredictor class with 64-dim hidden states
-   - Sequence-based training to capture orbital dynamics
-   - Comments explaining how hidden states solve non-linearity
-
-4. **Create 3D visualization and benchmarking pipeline**
-   - Matplotlib 3D plots comparing actual vs. predicted trajectories
-   - RMSE calculation and error distribution analysis
-   - Computational efficiency measurement for satellite applications
-
-5. **Complete documentation and project structure**
-   - Comprehensive README bridging Gauss, Rosenblatt, and modern ML
-   - Requirements.txt with all dependencies
-   - Educational code comments referencing "Geometrical Crisis"
-
 ## 🔗 References
 
 - Ananthaswamy, A. (2024). *Why Machines Learn: The Elegant Math Behind Modern AI*. Dutton.
@@ -196,4 +157,3 @@ This project is for educational purposes, demonstrating the historical evolution
 ---
 
 *"In the geometry of data, we find the patterns that govern motion—from the orbits of planets to the descent of gradients."*
-
