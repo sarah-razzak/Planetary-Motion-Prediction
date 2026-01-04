@@ -239,7 +239,7 @@ def visualize_3d_trajectories(actual, adaline_pred, lstm_pred, dates, scaler_y, 
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     print(f"\nVisualization saved to {save_path}")
-    plt.show()
+    plt.close()  # Close figure instead of showing (for headless/server use)
 
 
 def main():

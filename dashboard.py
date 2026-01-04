@@ -1,9 +1,8 @@
 """
 Interactive Error Surface Dashboard
 
-A Streamlit dashboard for visualizing the error surface and training dynamics
-of the Adaline model. Demonstrates how learning rate affects gradient descent
-and the "ball in bowl" analogy.
+A comprehensive Streamlit dashboard for visualizing the error surface, training dynamics,
+and comparing Adaline vs LSTM models. All visualizations integrated from main.py.
 """
 
 try:
@@ -16,8 +15,6 @@ except ImportError:
     print("Streamlit or Plotly not available. Install with: pip install streamlit plotly")
 
 import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 from data import fetch_apophis_data, prepare_sequences
 from model import Adaline
@@ -25,6 +22,8 @@ from model import Adaline
 try:
     import torch
     import torch.nn as nn
+    import torch.optim as optim
+    from model import LSTMPredictor
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
@@ -42,16 +41,17 @@ if not STREAMLIT_AVAILABLE:
 
 # Page config
 st.set_page_config(
-    page_title="The Ancient Predictor - Error Surface Dashboard",
+    page_title="The Ancient Predictor - Interactive Dashboard",
     page_icon="🌌",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-st.title("🌌 The Ancient Predictor: Error Surface Dashboard")
-st.markdown("### Interactive visualization of gradient descent and the error surface")
+st.title("🌌 The Ancient Predictor: Interactive Dashboard")
+st.markdown("### Compare Adaline (1960s) vs LSTM (2026-era) with real NASA asteroid data")
 
 # Sidebar controls
-st.sidebar.header("Training Parameters")
+st.sidebar.header("⚙️ Training Parameters")
 
 learning_rate = st.sidebar.slider(
     "Learning Rate (η)",
@@ -93,26 +93,83 @@ epochs = st.sidebar.slider(
     step=10
 )
 
+train_lstm = st.sidebar.checkbox(
+    "Train LSTM Model (2026-era)",
+    value=True,
+    help="Compare with modern LSTM architecture"
+)
+
+lstm_epochs = st.sidebar.slider(
+    "LSTM Epochs",
+    min_value=10,
+    max_value=100,
+    value=50,
+    step=10,
+    disabled=not train_lstm
+)
+
 # Load data
 @st.cache_data
 def load_data():
     """Load and cache the asteroid data."""
     try:
         X, y, scaler_X, scaler_y, dates = fetch_apophis_data('2026-01-01', '2026-12-31')
-        # Use smaller subset for dashboard
         split_idx = int(0.8 * len(X))
         X_train, X_val = X[:split_idx], X[split_idx:]
         y_train, y_val = y[:split_idx], y[split_idx:]
-        return X_train, y_train, X_val, y_val, scaler_X, scaler_y
+        return X_train, y_train, X_val, y_val, scaler_X, scaler_y, dates
     except Exception as e:
         st.error(f"Error loading data: {e}")
-        return None, None, None, None, None, None
+        return None, None, None, None, None, None, None
 
-X_train, y_train, X_val, y_val, scaler_X, scaler_y = load_data()
+X_train, y_train, X_val, y_val, scaler_X, scaler_y, dates = load_data()
+
+def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=50, batch_size=32, lr=0.001):
+    """Train LSTM model."""
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    
+    X_train_tensor = torch.FloatTensor(X_train)
+    y_train_tensor = torch.FloatTensor(y_train)
+    X_val_tensor = torch.FloatTensor(X_val)
+    y_val_tensor = torch.FloatTensor(y_val)
+    
+    train_losses = []
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    for epoch in range(epochs):
+        model.train()
+        epoch_loss = 0.0
+        n_batches = 0
+        
+        for i in range(0, len(X_train), batch_size):
+            batch_X = X_train_tensor[i:i+batch_size]
+            batch_y = y_train_tensor[i:i+batch_size]
+            
+            optimizer.zero_grad()
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+            optimizer.step()
+            
+            epoch_loss += loss.item()
+            n_batches += 1
+        
+        avg_loss = epoch_loss / n_batches
+        train_losses.append(avg_loss)
+        
+        progress_bar.progress((epoch + 1) / epochs)
+        status_text.text(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f}")
+    
+    progress_bar.empty()
+    status_text.empty()
+    return train_losses
 
 if X_train is not None:
-    # Train model
-    if st.sidebar.button("🚀 Train Model", type="primary"):
+    # Train models
+    if st.sidebar.button("🚀 Train Models", type="primary"):
+        # Train Adaline
         with st.spinner("Training Adaline model..."):
             adaline = Adaline(
                 n_features=X_train.shape[1],
@@ -127,240 +184,438 @@ if X_train is not None:
             
             # Store in session state
             st.session_state['adaline'] = adaline
+            st.session_state['adaline_pred'] = adaline.predict(X_val)
             st.session_state['mse_history'] = adaline.mse_history
             st.session_state['physics_history'] = adaline.physics_constraint_history
             st.session_state['alerts'] = adaline.concept_drift_alerts
+        
+        # Train LSTM if requested
+        if train_lstm and TORCH_AVAILABLE:
+            with st.spinner("Training LSTM model..."):
+                sequence_length = 10
+                X_train_seq, y_train_seq = prepare_sequences(X_train, y_train, sequence_length)
+                X_val_seq, y_val_seq = prepare_sequences(X_val, y_val, sequence_length)
+                
+                lstm_model = LSTMPredictor(
+                    input_dim=X_train.shape[1],
+                    hidden_dim=64,
+                    output_dim=3,
+                    quantization_bits=quantization_bits
+                )
+                
+                lstm_losses = train_lstm_model(
+                    lstm_model, X_train_seq, y_train_seq,
+                    X_val_seq, y_val_seq, epochs=lstm_epochs
+                )
+                
+                # Get predictions
+                lstm_model.eval()
+                with torch.no_grad():
+                    X_val_tensor = torch.FloatTensor(X_val_seq)
+                    lstm_pred = lstm_model(X_val_tensor).numpy()
+                
+                st.session_state['lstm'] = lstm_model
+                st.session_state['lstm_pred'] = lstm_pred
+                st.session_state['lstm_losses'] = lstm_losses
+                st.session_state['y_val_seq'] = y_val_seq
+                st.session_state['X_val_seq'] = X_val_seq
     
     # Display results if model is trained
     if 'adaline' in st.session_state:
         adaline = st.session_state['adaline']
+        adaline_pred = st.session_state['adaline_pred']
         mse_history = st.session_state['mse_history']
         physics_history = st.session_state['physics_history']
         alerts = st.session_state['alerts']
         
-        # Create two columns for visualizations
-        col1, col2 = st.columns(2)
+        # Calculate RMSE
+        def calculate_rmse(y_true, y_pred):
+            return np.sqrt(np.mean((y_true - y_pred) ** 2))
         
-        with col1:
-            st.subheader("📉 Error Surface Journey (MSE)")
-            
-            # Error surface visualization
-            fig = go.Figure()
-            
-            # Plot MSE history
-            fig.add_trace(go.Scatter(
-                y=mse_history,
-                mode='lines+markers',
-                name='MSE',
-                line=dict(color='blue', width=2),
-                marker=dict(size=4)
-            ))
-            
-            # Add physics constraint if enabled
-            if use_pigd and len(physics_history) > 0:
-                fig.add_trace(go.Scatter(
-                    y=np.array(physics_history) * lambda_pigd,
-                    mode='lines',
-                    name='Physics Constraint',
-                    line=dict(color='red', width=2, dash='dash'),
-                    yaxis='y2'
-                ))
-            
-            # Highlight concept drift alerts
-            if len(alerts) > 0:
-                for alert in alerts:
-                    fig.add_vline(
-                        x=alert['epoch'],
-                        line_dash="dot",
-                        line_color="orange",
-                        annotation_text="⚠️ Alert"
-                    )
-            
-            fig.update_layout(
-                title="Error Surface: The 'Bowl' Journey",
-                xaxis_title="Epoch",
-                yaxis_title="MSE",
-                yaxis2=dict(
-                    title="Physics Constraint",
-                    overlaying='y',
-                    side='right'
-                ) if use_pigd else None,
-                height=400,
-                hovermode='x unified'
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Learning rate warning
-            if learning_rate > 0.1:
-                st.warning("⚠️ High learning rate detected! The 'ball' may bounce out of the 'bowl'.")
-            elif learning_rate < 0.005:
-                st.info("ℹ️ Low learning rate: Training will be slow but stable.")
+        adaline_rmse = calculate_rmse(y_val, adaline_pred)
         
-        with col2:
-            st.subheader("🌍 3D Trajectory Prediction")
+        # Prepare data for visualization (inverse transform)
+        actual_unscaled = scaler_y.inverse_transform(y_val)
+        adaline_unscaled = scaler_y.inverse_transform(adaline_pred)
+        
+        # Main visualization section
+        st.header("📊 Comprehensive Model Comparison")
+        
+        # Tab layout for different views
+        tab1, tab2, tab3, tab4 = st.tabs(["🎯 3D Trajectories", "📈 Training Dynamics", "📉 Error Analysis", "🔬 Model Details"])
+        
+        with tab1:
+            st.subheader("3D Trajectory Comparison")
             
-            # Make predictions
-            y_pred = adaline.predict(X_val)
+            # Determine what to show
+            show_lstm = 'lstm_pred' in st.session_state
             
-            # Inverse transform to original scale
-            actual_unscaled = scaler_y.inverse_transform(y_val[:100])  # First 100 for visualization
-            pred_unscaled = scaler_y.inverse_transform(y_pred[:100])
-            
-            # 3D plot
+            # 3D trajectory plot
             fig_3d = go.Figure()
             
-            # Actual trajectory
+            # Actual NASA path
             fig_3d.add_trace(go.Scatter3d(
                 x=actual_unscaled[:, 0],
                 y=actual_unscaled[:, 1],
                 z=actual_unscaled[:, 2],
                 mode='markers',
                 name='Actual NASA Path',
-                marker=dict(size=2, color='blue', opacity=0.6)
+                marker=dict(
+                    size=3,
+                    color=np.arange(len(actual_unscaled)),
+                    colorscale='Viridis',
+                    opacity=0.7,
+                    showscale=True,
+                    colorbar=dict(title="Time Step")
+                )
             ))
             
-            # Predicted trajectory
+            # Adaline prediction
             fig_3d.add_trace(go.Scatter3d(
-                x=pred_unscaled[:, 0],
-                y=pred_unscaled[:, 1],
-                z=pred_unscaled[:, 2],
+                x=adaline_unscaled[:, 0],
+                y=adaline_unscaled[:, 1],
+                z=adaline_unscaled[:, 2],
                 mode='lines',
-                name='Adaline Prediction',
+                name='Adaline (Linear)',
                 line=dict(color='red', width=3)
             ))
             
+            # LSTM prediction if available
+            if show_lstm:
+                lstm_pred = st.session_state['lstm_pred']
+                y_val_seq = st.session_state['y_val_seq']
+                # Align predictions
+                actual_vis = y_val[sequence_length-1:]
+                lstm_unscaled = scaler_y.inverse_transform(lstm_pred)
+                actual_vis_unscaled = scaler_y.inverse_transform(actual_vis)
+                
+                fig_3d.add_trace(go.Scatter3d(
+                    x=lstm_unscaled[:, 0],
+                    y=lstm_unscaled[:, 1],
+                    z=lstm_unscaled[:, 2],
+                    mode='lines',
+                    name='LSTM (Sequential Memory)',
+                    line=dict(color='green', width=3)
+                ))
+            
             fig_3d.update_layout(
-                title="3D Trajectory Comparison",
+                title="3D Trajectory Comparison: Apophis Asteroid",
                 scene=dict(
                     xaxis_title="X (AU)",
                     yaxis_title="Y (AU)",
-                    zaxis_title="Z (AU)"
+                    zaxis_title="Z (AU)",
+                    camera=dict(eye=dict(x=1.5, y=1.5, z=1.5))
                 ),
-                height=400
+                height=600,
+                legend=dict(x=0, y=1)
             )
             
             st.plotly_chart(fig_3d, use_container_width=True)
-        
-        # Metrics row
-        col3, col4, col5 = st.columns(3)
-        
-        with col3:
-            final_mse = mse_history[-1] if len(mse_history) > 0 else 0
-            initial_mse = mse_history[0] if len(mse_history) > 0 else 0
-            improvement = ((initial_mse - final_mse) / initial_mse * 100) if initial_mse > 0 else 0
             
-            st.metric(
-                "Final MSE",
-                f"{final_mse:.6f}",
-                delta=f"{improvement:.1f}% improvement"
-            )
+            # Metrics comparison
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Adaline RMSE", f"{adaline_rmse:.6f}", "Validation")
+            if show_lstm:
+                lstm_rmse = calculate_rmse(y_val_seq, lstm_pred)
+                with col2:
+                    st.metric("LSTM RMSE", f"{lstm_rmse:.6f}", "Validation")
+                with col3:
+                    improvement = ((adaline_rmse - lstm_rmse) / adaline_rmse * 100)
+                    st.metric("LSTM Improvement", f"{improvement:.2f}%", 
+                             delta="Better" if improvement > 0 else "Worse")
         
-        with col4:
-            if use_pigd:
-                final_physics = physics_history[-1] if len(physics_history) > 0 else 0
-                st.metric(
-                    "Physics Constraint",
-                    f"{final_physics:.6f}",
-                    delta="Lower is better"
+        with tab2:
+            st.subheader("Training Dynamics: Error Surface Journey")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # MSE history
+                fig_mse = go.Figure()
+                fig_mse.add_trace(go.Scatter(
+                    y=mse_history,
+                    mode='lines+markers',
+                    name='Adaline MSE',
+                    line=dict(color='blue', width=2),
+                    marker=dict(size=4)
+                ))
+                
+                if show_lstm:
+                    lstm_losses = st.session_state['lstm_losses']
+                    fig_mse.add_trace(go.Scatter(
+                        y=lstm_losses,
+                        mode='lines+markers',
+                        name='LSTM Loss',
+                        line=dict(color='green', width=2),
+                        marker=dict(size=4)
+                    ))
+                
+                # Highlight concept drift alerts
+                if len(alerts) > 0:
+                    for alert in alerts:
+                        fig_mse.add_vline(
+                            x=alert['epoch'],
+                            line_dash="dot",
+                            line_color="orange",
+                            annotation_text="⚠️"
+                        )
+                
+                fig_mse.update_layout(
+                    title="Error Surface: The 'Bowl' Journey",
+                    xaxis_title="Epoch",
+                    yaxis_title="Loss (MSE)",
+                    height=400,
+                    hovermode='x unified',
+                    legend=dict(x=0, y=1)
                 )
+                
+                st.plotly_chart(fig_mse, use_container_width=True)
+            
+            with col2:
+                # Physics constraint if enabled
+                if use_pigd and len(physics_history) > 0:
+                    fig_physics = go.Figure()
+                    fig_physics.add_trace(go.Scatter(
+                        y=physics_history,
+                        mode='lines',
+                        name='Physics Constraint',
+                        line=dict(color='red', width=2)
+                    ))
+                    fig_physics.update_layout(
+                        title="Physics Constraint (Kepler's Law)",
+                        xaxis_title="Epoch",
+                        yaxis_title="Constraint Violation",
+                        height=400
+                    )
+                    st.plotly_chart(fig_physics, use_container_width=True)
+                else:
+                    st.info("Enable PIGD to see physics constraint visualization")
+            
+            # Learning rate analysis
+            if learning_rate > 0.1:
+                st.warning("⚠️ High learning rate detected! The 'ball' may bounce out of the 'bowl'.")
+            elif learning_rate < 0.005:
+                st.info("ℹ️ Low learning rate: Training will be slow but stable.")
             else:
-                st.metric("Quantization", "Full Precision" if quantization_bits is None else f"{quantization_bits}-bit")
+                st.success("✅ Learning rate is in a good range for stable training.")
         
-        with col5:
-            st.metric(
-                "Concept Drift Alerts",
-                len(alerts),
-                delta="Non-linearity detected" if len(alerts) > 0 else "No alerts"
-            )
-        
-        # Concept drift alerts
-        if len(alerts) > 0:
-            st.subheader("⚠️ Concept Drift Alerts")
-            for alert in alerts:
-                st.warning(f"**Epoch {alert['epoch']}**: {alert['message']} (Error increase: {alert['error_increase']:.6f})")
-        
-        # Error surface 2D visualization
-        st.subheader("🎯 Error Surface Visualization")
-        st.markdown("""
-        This visualization shows the "bowl" shape of the error surface. 
-        As the learning rate increases, the optimization "ball" may bounce out of the bowl.
-        """)
-        
-        # Create a simplified 2D error surface
-        w_range = np.linspace(-2, 2, 50)
-        error_surface = np.zeros((50, 50))
-        
-        # Simplified error surface (bowl shape)
-        for i, w1 in enumerate(w_range):
-            for j, w2 in enumerate(w_range):
-                # Parabolic bowl: error increases with distance from center
-                error_surface[i, j] = w1**2 + w2**2
-        
-        fig_surface = go.Figure(data=[go.Surface(z=error_surface, x=w_range, y=w_range)])
-        
-        # Add trajectory point (simplified)
-        if len(mse_history) > 10:
-            # Show how MSE decreases (moving toward center of bowl)
-            trajectory_z = mse_history[::max(1, len(mse_history)//20)]
-            trajectory_x = np.linspace(-1, 1, len(trajectory_z))
-            trajectory_y = np.linspace(-1, 1, len(trajectory_z))
+        with tab3:
+            st.subheader("Error Analysis: Adaline vs LSTM")
             
-            fig_surface.add_trace(go.Scatter3d(
-                x=trajectory_x,
-                y=trajectory_y,
-                z=trajectory_z,
-                mode='markers+lines',
-                name='Training Path',
-                marker=dict(size=5, color='red'),
-                line=dict(color='red', width=3)
+            # Error over time
+            adaline_error = np.linalg.norm(actual_unscaled - adaline_unscaled, axis=1)
+            
+            fig_error_time = go.Figure()
+            fig_error_time.add_trace(go.Scatter(
+                y=adaline_error,
+                mode='lines',
+                name='Adaline Error',
+                line=dict(color='red', width=2)
             ))
+            
+            if show_lstm:
+                lstm_pred = st.session_state['lstm_pred']
+                y_val_seq = st.session_state['y_val_seq']
+                actual_vis = y_val[sequence_length-1:]
+                lstm_unscaled = scaler_y.inverse_transform(lstm_pred)
+                actual_vis_unscaled = scaler_y.inverse_transform(actual_vis)
+                lstm_error = np.linalg.norm(actual_vis_unscaled - lstm_unscaled, axis=1)
+                
+                fig_error_time.add_trace(go.Scatter(
+                    y=lstm_error,
+                    mode='lines',
+                    name='LSTM Error',
+                    line=dict(color='green', width=2)
+                ))
+            
+            fig_error_time.update_layout(
+                title="Prediction Error Over Time",
+                xaxis_title="Time Step",
+                yaxis_title="Position Error (AU)",
+                height=400,
+                legend=dict(x=0, y=1)
+            )
+            
+            st.plotly_chart(fig_error_time, use_container_width=True)
+            
+            # Error distribution
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                fig_dist = go.Figure()
+                fig_dist.add_trace(go.Histogram(
+                    x=adaline_error,
+                    name='Adaline',
+                    nbinsx=50,
+                    opacity=0.7,
+                    marker_color='red'
+                ))
+                
+                if show_lstm:
+                    fig_dist.add_trace(go.Histogram(
+                        x=lstm_error,
+                        name='LSTM',
+                        nbinsx=50,
+                        opacity=0.7,
+                        marker_color='green'
+                    ))
+                
+                fig_dist.update_layout(
+                    title="Error Distribution",
+                    xaxis_title="Position Error (AU)",
+                    yaxis_title="Frequency",
+                    height=400,
+                    barmode='overlay',
+                    legend=dict(x=0, y=1)
+                )
+                
+                st.plotly_chart(fig_dist, use_container_width=True)
+            
+            with col2:
+                # Statistics
+                st.subheader("Error Statistics")
+                
+                stats_data = {
+                    'Model': ['Adaline'],
+                    'Mean Error': [np.mean(adaline_error)],
+                    'Std Error': [np.std(adaline_error)],
+                    'Max Error': [np.max(adaline_error)],
+                    'Min Error': [np.min(adaline_error)]
+                }
+                
+                if show_lstm:
+                    stats_data['Model'].append('LSTM')
+                    stats_data['Mean Error'].append(np.mean(lstm_error))
+                    stats_data['Std Error'].append(np.std(lstm_error))
+                    stats_data['Max Error'].append(np.max(lstm_error))
+                    stats_data['Min Error'].append(np.min(lstm_error))
+                
+                import pandas as pd
+                df_stats = pd.DataFrame(stats_data)
+                st.dataframe(df_stats, use_container_width=True, hide_index=True)
         
-        fig_surface.update_layout(
-            title="Error Surface: The 'Bowl' (Simplified 2D Projection)",
-            scene=dict(
-                xaxis_title="Weight 1",
-                yaxis_title="Weight 2",
-                zaxis_title="Error (MSE)"
-            ),
-            height=500
-        )
-        
-        st.plotly_chart(fig_surface, use_container_width=True)
-        
-        # Explanation
-        with st.expander("📚 Understanding the Error Surface"):
+        with tab4:
+            st.subheader("Model Details & Insights")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("### 📊 Adaline Model")
+                st.write(f"**Final MSE**: {mse_history[-1]:.6f}")
+                st.write(f"**Initial MSE**: {mse_history[0]:.6f}")
+                improvement = ((mse_history[0] - mse_history[-1]) / mse_history[0] * 100)
+                st.write(f"**Improvement**: {improvement:.2f}%")
+                st.write(f"**RMSE**: {adaline_rmse:.6f}")
+                
+                if use_pigd:
+                    st.write(f"**Physics Constraint**: {physics_history[-1]:.6f}")
+                
+                if quantization_bits:
+                    st.write(f"**Quantization**: {quantization_bits}-bit")
+                
+                st.write(f"**Concept Drift Alerts**: {len(alerts)}")
+            
+            with col2:
+                if show_lstm:
+                    st.markdown("### 🧠 LSTM Model")
+                    lstm_losses = st.session_state['lstm_losses']
+                    st.write(f"**Final Loss**: {lstm_losses[-1]:.6f}")
+                    st.write(f"**Initial Loss**: {lstm_losses[0]:.6f}")
+                    lstm_improvement = ((lstm_losses[0] - lstm_losses[-1]) / lstm_losses[0] * 100)
+                    st.write(f"**Improvement**: {lstm_improvement:.2f}%")
+                    lstm_rmse = calculate_rmse(y_val_seq, lstm_pred)
+                    st.write(f"**RMSE**: {lstm_rmse:.6f}")
+                    st.write(f"**Architecture**: 1 LSTM layer (64 hidden dims)")
+                    if quantization_bits:
+                        st.write(f"**Quantization**: {quantization_bits}-bit")
+            
+            # Concept drift alerts
+            if len(alerts) > 0:
+                st.markdown("### ⚠️ Concept Drift Alerts")
+                for alert in alerts:
+                    st.warning(f"**Epoch {alert['epoch']}**: {alert['message']} (Error increase: {alert['error_increase']:.6f})")
+            
+            # Error surface visualization
+            st.markdown("### 🎯 Error Surface Visualization")
             st.markdown("""
-            **The Error Surface ("Bowl") Analogy:**
-            
-            1. **The Bowl**: The error surface is like a bowl - the bottom represents the optimal weights
-            2. **The Ball**: Your model's weights are like a ball rolling down the bowl
-            3. **Learning Rate (η)**: Controls how big the steps are
-               - Too small: Ball moves slowly, takes forever to reach bottom
-               - Too large: Ball bounces out of the bowl (divergence)
-               - Just right: Ball smoothly rolls to the bottom
-            
-            **Physics-Informed Gradient Descent (PIGD):**
-            - Adds a constraint based on Kepler's Second Law (angular momentum conservation)
-            - Helps the model respect physical laws while learning from data
-            - Demonstrates hybrid AI: combining data-driven learning with human knowledge
-            
-            **Concept Drift Detection:**
-            - Monitors error trends over time
-            - Alerts when linear models can't track curved trajectories
-            - Simulates the historical moment when researchers realized they needed MLPs
+            The error surface is like a "bowl" - the bottom represents optimal weights.
+            As learning rate increases, the optimization "ball" may bounce out of the bowl.
             """)
+            
+            # Simplified error surface
+            w_range = np.linspace(-2, 2, 50)
+            error_surface = np.zeros((50, 50))
+            for i, w1 in enumerate(w_range):
+                for j, w2 in enumerate(w_range):
+                    error_surface[i, j] = w1**2 + w2**2
+            
+            fig_surface = go.Figure(data=[go.Surface(z=error_surface, x=w_range, y=w_range, colorscale='Viridis')])
+            
+            if len(mse_history) > 10:
+                trajectory_z = mse_history[::max(1, len(mse_history)//20)]
+                trajectory_x = np.linspace(-1, 1, len(trajectory_z))
+                trajectory_y = np.linspace(-1, 1, len(trajectory_z))
+                
+                fig_surface.add_trace(go.Scatter3d(
+                    x=trajectory_x,
+                    y=trajectory_y,
+                    z=trajectory_z,
+                    mode='markers+lines',
+                    name='Training Path',
+                    marker=dict(size=5, color='red'),
+                    line=dict(color='red', width=3)
+                ))
+            
+            fig_surface.update_layout(
+                title="Error Surface: The 'Bowl' (Simplified 2D Projection)",
+                scene=dict(
+                    xaxis_title="Weight 1",
+                    yaxis_title="Weight 2",
+                    zaxis_title="Error (MSE)",
+                    camera=dict(eye=dict(x=1.5, y=1.5, z=1.2))
+                ),
+                height=500
+            )
+            
+            st.plotly_chart(fig_surface, use_container_width=True)
+            
+            # Educational content
+            with st.expander("📚 Understanding the Models"):
+                st.markdown("""
+                **Adaline (1960s):**
+                - Uses Widrow-Hoff Delta Rule: w = w + η(y - ŷ)x
+                - Linear activation function for regression
+                - Struggles with non-linear trajectories (Geometrical Crisis)
+                
+                **LSTM (2026-era):**
+                - Maintains hidden state memory across time steps
+                - Captures sequential patterns and non-linear dynamics
+                - Better at predicting curved orbital trajectories
+                
+                **Physics-Informed Gradient Descent (PIGD):**
+                - Adds Kepler's Second Law constraint (angular momentum conservation)
+                - Demonstrates hybrid AI: data-driven + physics knowledge
+                - Helps model respect physical laws while learning
+                
+                **Concept Drift Detection:**
+                - Monitors error trends over time
+                - Alerts when linear models can't track curved trajectories
+                - Simulates historical moment when MLPs were needed
+                """)
     
     else:
-        st.info("👈 Adjust parameters in the sidebar and click 'Train Model' to start!")
+        st.info("👈 Adjust parameters in the sidebar and click 'Train Models' to start!")
         
         # Show data info
         st.subheader("📊 Data Information")
-        st.write(f"Training samples: {len(X_train)}")
-        st.write(f"Validation samples: {len(X_val)}")
-        st.write(f"Features: {X_train.shape[1]} (Time, X, Y, Z, VX, VY, VZ)")
-        st.write(f"Labels: {y_train.shape[1]} (X, Y, Z position at t+1)")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Training Samples", len(X_train))
+        with col2:
+            st.metric("Validation Samples", len(X_val))
+        with col3:
+            st.metric("Features", f"{X_train.shape[1]} (Time, X, Y, Z, VX, VY, VZ)")
 
 else:
     st.error("Failed to load data. Please check your internet connection and try again.")
-
