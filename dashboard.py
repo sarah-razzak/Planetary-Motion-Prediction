@@ -326,12 +326,18 @@ if X_train is not None:
                 if show_lstm and 'lstm_pred' in st.session_state and 'y_val_seq' in st.session_state:
                     lstm_pred = st.session_state['lstm_pred']
                     y_val_seq = st.session_state['y_val_seq']
-                    # Use y_val_seq directly for RMSE (they're already aligned)
+                    # Calculate RMSE on aligned validation sequences
                     lstm_rmse = calculate_rmse(y_val_seq, lstm_pred)
+                    # Also calculate on same validation set as Adaline for fair comparison
+                    sequence_length = 10
+                    actual_vis = y_val[sequence_length-1:]
+                    min_len = min(len(actual_vis), len(lstm_pred))
+                    lstm_rmse_aligned = calculate_rmse(actual_vis[:min_len], lstm_pred[:min_len])
+                    
                     with col2:
-                        st.metric("LSTM RMSE", f"{lstm_rmse:.6f}", "Validation")
+                        st.metric("LSTM RMSE", f"{lstm_rmse_aligned:.6f}", "Validation (aligned)")
                     with col3:
-                        improvement = ((adaline_rmse - lstm_rmse) / adaline_rmse * 100)
+                        improvement = ((adaline_rmse - lstm_rmse_aligned) / adaline_rmse * 100)
                         st.metric("LSTM Improvement", f"{improvement:.2f}%", 
                                  delta="Better" if improvement > 0 else "Worse")
         
@@ -556,8 +562,12 @@ if X_train is not None:
                     lstm_improvement = ((lstm_losses[0] - lstm_losses[-1]) / lstm_losses[0] * 100)
                     st.write(f"**Improvement**: {lstm_improvement:.2f}%")
                     if y_val_seq is not None:
-                        lstm_rmse = calculate_rmse(y_val_seq, lstm_pred)
-                        st.write(f"**RMSE**: {lstm_rmse:.6f}")
+                        # Calculate RMSE on aligned validation set (same as Adaline comparison)
+                        sequence_length = 10
+                        actual_vis = y_val[sequence_length-1:]
+                        min_len = min(len(actual_vis), len(lstm_pred))
+                        lstm_rmse = calculate_rmse(actual_vis[:min_len], lstm_pred[:min_len])
+                        st.write(f"**RMSE (Validation)**: {lstm_rmse:.6f}")
                     st.write(f"**Architecture**: 1 LSTM layer (64 hidden dims)")
                     if quantization_bits:
                         st.write(f"**Quantization**: {quantization_bits}-bit")
