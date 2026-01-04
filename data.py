@@ -262,7 +262,8 @@ def fetch_apophis_data(start_date='2026-01-01', end_date='2030-01-01'):
     # CRITICAL: Physics-Aware Normalization
     # Position (X, Y, Z) and velocity (VX, VY, VZ) have a physical relationship: v = dx/dt
     # If normalized separately, the LSTM cannot learn this relationship.
-    # Solution: Normalize position and velocity together to preserve their ratio.
+    # Solution: Use the SAME scale factor for position and velocity dimensions.
+    # This ensures that in normalized space, velocity changes are proportional to position changes.
     
     # Extract position and velocity columns
     # X format: [Time, X, Y, Z, VX, VY, VZ]
@@ -270,19 +271,22 @@ def fetch_apophis_data(start_date='2026-01-01', end_date='2030-01-01'):
     velocities = X[:, 4:7]  # VX, VY, VZ
     time_feature = X[:, 0:1]  # Time (keep separate)
     
-    # Combine all position and velocity data to normalize together
-    # This preserves the physical relationship: velocity scale relative to position scale
-    all_pos_vel = np.vstack([positions, velocities, y])  # Include y positions too
+    # Compute shared statistics for ALL position values (all X, Y, Z flattened)
+    # and ALL velocity values (all VX, VY, VZ flattened)
+    all_positions = np.concatenate([positions.flatten(), y.flatten()])  # Include y positions
+    all_velocities = velocities.flatten()
     
-    # Create a single scaler for all position/velocity data
-    pos_vel_scaler = StandardScaler()
-    all_pos_vel_scaled = pos_vel_scaler.fit_transform(all_pos_vel)
+    # Compute mean and std from combined data
+    pos_mean = np.mean(all_positions)
+    pos_std = np.std(all_positions)
+    vel_mean = np.mean(all_velocities)
+    vel_std = np.std(all_velocities)
     
-    # Split back
-    n_samples = len(X)
-    positions_scaled = all_pos_vel_scaled[:n_samples]
-    velocities_scaled = all_pos_vel_scaled[n_samples:2*n_samples]
-    y_scaled = all_pos_vel_scaled[2*n_samples:]
+    # Normalize using shared statistics: all position dims use same mean/std,
+    # all velocity dims use same mean/std
+    positions_scaled = (positions - pos_mean) / pos_std
+    velocities_scaled = (velocities - vel_mean) / vel_std
+    y_scaled = (y - pos_mean) / pos_std  # y is also position
     
     # Normalize time separately (it's not physically related to position/velocity scale)
     time_scaler = StandardScaler()
@@ -292,23 +296,21 @@ def fetch_apophis_data(start_date='2026-01-01', end_date='2030-01-01'):
     X_scaled = np.hstack([time_scaled, positions_scaled, velocities_scaled])
     
     # Create scalers for inverse transform (needed for visualization)
-    # For X: we need to be able to inverse transform the full feature vector
-    # Store the component scalers in a custom object or use the original scaler
+    # For X: reconstruct scaler with physics-aware normalization
     scaler_X = StandardScaler()
-    scaler_X.fit(X)  # Fit on original for inverse transform compatibility
-    # Override with physics-aware scaling for mean and scale
+    scaler_X.fit(X)  # Fit on original for structure
     scaler_X.mean_ = np.hstack([time_scaler.mean_.flatten(), 
-                                pos_vel_scaler.mean_[:3], 
-                                pos_vel_scaler.mean_[:3]])
+                                [pos_mean] * 3,  # X, Y, Z use same mean
+                                [vel_mean] * 3])  # VX, VY, VZ use same mean
     scaler_X.scale_ = np.hstack([time_scaler.scale_.flatten(), 
-                                 pos_vel_scaler.scale_[:3], 
-                                 pos_vel_scaler.scale_[:3]])
+                                 [pos_std] * 3,  # X, Y, Z use same std
+                                 [vel_std] * 3])  # VX, VY, VZ use same std
     
-    # For y: use position scaler (y is position, same as X positions)
+    # For y: use position scaler (y is position)
     scaler_y = StandardScaler()
-    scaler_y.fit(y)  # Fit on original
-    scaler_y.mean_ = pos_vel_scaler.mean_[:3]  # Use position mean from joint scaler
-    scaler_y.scale_ = pos_vel_scaler.scale_[:3]  # Use position scale from joint scaler
+    scaler_y.fit(y)  # Fit on original for structure
+    scaler_y.mean_ = np.array([pos_mean] * 3)  # Same mean as positions
+    scaler_y.scale_ = np.array([pos_std] * 3)  # Same std as positions
     
     print(f"Successfully fetched {len(X_scaled)} data points")
     print(f"Feature shape: {X_scaled.shape}")
