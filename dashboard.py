@@ -226,11 +226,17 @@ if X_train is not None:
                     X_val_tensor = torch.FloatTensor(X_val_seq)
                     lstm_pred = lstm_model(X_val_tensor).numpy()
                 
+                # Debug: Check shapes and values
+                # st.write(f"Debug - y_val_seq shape: {y_val_seq.shape}, lstm_pred shape: {lstm_pred.shape}")
+                # st.write(f"Debug - y_val_seq range: [{y_val_seq.min():.3f}, {y_val_seq.max():.3f}]")
+                # st.write(f"Debug - lstm_pred range: [{lstm_pred.min():.3f}, {lstm_pred.max():.3f}]")
+                
                 st.session_state['lstm'] = lstm_model
                 st.session_state['lstm_pred'] = lstm_pred
                 st.session_state['lstm_losses'] = lstm_losses
                 st.session_state['y_val_seq'] = y_val_seq
                 st.session_state['X_val_seq'] = X_val_seq
+                st.session_state['sequence_length'] = sequence_length
     
     # Display results if model is trained
     if 'adaline' in st.session_state and 'adaline_pred' in st.session_state:
@@ -338,19 +344,24 @@ if X_train is not None:
                 if show_lstm and 'lstm_pred' in st.session_state and 'y_val_seq' in st.session_state:
                     lstm_pred = st.session_state['lstm_pred']
                     y_val_seq = st.session_state['y_val_seq']
-                    # Calculate RMSE on aligned validation sequences
-                    lstm_rmse = calculate_rmse(y_val_seq, lstm_pred)
-                    # Also calculate on same validation set as Adaline for fair comparison
+                    
+                    # Calculate RMSE on the sequences (what LSTM was trained on)
+                    lstm_rmse_seq = calculate_rmse(y_val_seq, lstm_pred)
+                    
+                    # Also calculate on aligned validation set (same as Adaline) for fair comparison
                     sequence_length = 10
                     actual_vis = y_val[sequence_length-1:]
                     min_len = min(len(actual_vis), len(lstm_pred))
                     lstm_rmse_aligned = calculate_rmse(actual_vis[:min_len], lstm_pred[:min_len])
                     
                     with col2:
-                        st.metric("LSTM RMSE", f"{lstm_rmse_aligned:.6f}", "Validation (aligned)")
+                        # Show both for transparency
+                        st.metric("LSTM RMSE", f"{lstm_rmse_seq:.6f}", "On Sequences")
+                        st.caption(f"Aligned: {lstm_rmse_aligned:.6f}")
                     with col3:
+                        # Compare with Adaline using aligned RMSE
                         improvement = ((adaline_rmse - lstm_rmse_aligned) / adaline_rmse * 100)
-                        st.metric("LSTM Improvement", f"{improvement:.2f}%", 
+                        st.metric("LSTM vs Adaline", f"{improvement:.2f}%", 
                                  delta="Better" if improvement > 0 else "Worse")
         
         with tab2:
@@ -574,12 +585,25 @@ if X_train is not None:
                     lstm_improvement = ((lstm_losses[0] - lstm_losses[-1]) / lstm_losses[0] * 100)
                     st.write(f"**Improvement**: {lstm_improvement:.2f}%")
                     if y_val_seq is not None:
-                        # Calculate RMSE on aligned validation set (same as Adaline comparison)
-                        sequence_length = 10
-                        actual_vis = y_val[sequence_length-1:]
-                        min_len = min(len(actual_vis), len(lstm_pred))
-                        lstm_rmse = calculate_rmse(actual_vis[:min_len], lstm_pred[:min_len])
-                        st.write(f"**RMSE (Validation)**: {lstm_rmse:.6f}")
+                        # CRITICAL: LSTM was trained to predict y_val_seq, so compare directly
+                        # y_val_seq and lstm_pred should be the same length and properly aligned
+                        if len(y_val_seq) == len(lstm_pred):
+                            lstm_rmse_seq = calculate_rmse(y_val_seq, lstm_pred)
+                            st.write(f"**RMSE (On Training Targets)**: {lstm_rmse_seq:.6f}")
+                            
+                            # Also calculate on aligned validation set for comparison with Adaline
+                            sequence_length = st.session_state.get('sequence_length', 10)
+                            actual_vis = y_val[sequence_length-1:]
+                            min_len = min(len(actual_vis), len(lstm_pred))
+                            if min_len > 0:
+                                lstm_rmse_aligned = calculate_rmse(actual_vis[:min_len], lstm_pred[:min_len])
+                                st.write(f"**RMSE (Aligned with Adaline)**: {lstm_rmse_aligned:.6f}")
+                                lstm_rmse = lstm_rmse_aligned
+                            else:
+                                lstm_rmse = lstm_rmse_seq
+                        else:
+                            st.error(f"Shape mismatch: y_val_seq {y_val_seq.shape} vs lstm_pred {lstm_pred.shape}")
+                            lstm_rmse = 0.0
                         
                         # Overfitting indicator
                         if lstm_losses[-1] < 0.001 and lstm_rmse > 0.3:
