@@ -6,17 +6,39 @@ of the Adaline model. Demonstrates how learning rate affects gradient descent
 and the "ball in bowl" analogy.
 """
 
-import streamlit as st
+try:
+    import streamlit as st
+    import plotly.graph_objects as go
+    import plotly.express as px
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
+    print("Streamlit or Plotly not available. Install with: pip install streamlit plotly")
+
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-import plotly.graph_objects as go
-import plotly.express as px
 
 from data import fetch_apophis_data, prepare_sequences
 from model import Adaline
-import torch
-import torch.nn as nn
+
+try:
+    import torch
+    import torch.nn as nn
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
+if not STREAMLIT_AVAILABLE:
+    print("\n" + "="*80)
+    print("ERROR: Streamlit is not installed.")
+    print("="*80)
+    print("To use the dashboard, install dependencies:")
+    print("  pip install streamlit plotly")
+    print("\nThen run:")
+    print("  streamlit run dashboard.py")
+    print("="*80)
+    exit(1)
 
 # Page config
 st.set_page_config(
