@@ -221,12 +221,12 @@ if X_train is not None:
                 st.session_state['X_val_seq'] = X_val_seq
     
     # Display results if model is trained
-    if 'adaline' in st.session_state:
+    if 'adaline' in st.session_state and 'adaline_pred' in st.session_state:
         adaline = st.session_state['adaline']
         adaline_pred = st.session_state['adaline_pred']
-        mse_history = st.session_state['mse_history']
-        physics_history = st.session_state['physics_history']
-        alerts = st.session_state['alerts']
+        mse_history = st.session_state.get('mse_history', [])
+        physics_history = st.session_state.get('physics_history', [])
+        alerts = st.session_state.get('alerts', [])
         
         # Calculate RMSE
         def calculate_rmse(y_true, y_pred):
@@ -248,7 +248,7 @@ if X_train is not None:
             st.subheader("3D Trajectory Comparison")
             
             # Determine what to show
-            show_lstm = 'lstm_pred' in st.session_state
+            show_lstm = 'lstm_pred' in st.session_state and 'lstm_pred' in st.session_state
             
             # 3D trajectory plot
             fig_3d = go.Figure()
@@ -282,12 +282,14 @@ if X_train is not None:
             
             # LSTM prediction if available
             if show_lstm:
-                lstm_pred = st.session_state['lstm_pred']
-                y_val_seq = st.session_state['y_val_seq']
-                # Align predictions
-                actual_vis = y_val[sequence_length-1:]
-                lstm_unscaled = scaler_y.inverse_transform(lstm_pred)
-                actual_vis_unscaled = scaler_y.inverse_transform(actual_vis)
+                lstm_pred = st.session_state.get('lstm_pred')
+                y_val_seq = st.session_state.get('y_val_seq')
+                if lstm_pred is not None and y_val_seq is not None:
+                    # Align predictions
+                    sequence_length = 10
+                    actual_vis = y_val[sequence_length-1:]
+                    lstm_unscaled = scaler_y.inverse_transform(lstm_pred)
+                    actual_vis_unscaled = scaler_y.inverse_transform(actual_vis)
                 
                 fig_3d.add_trace(go.Scatter3d(
                     x=lstm_unscaled[:, 0],
@@ -316,14 +318,16 @@ if X_train is not None:
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Adaline RMSE", f"{adaline_rmse:.6f}", "Validation")
-            if show_lstm:
-                lstm_rmse = calculate_rmse(y_val_seq, lstm_pred)
-                with col2:
-                    st.metric("LSTM RMSE", f"{lstm_rmse:.6f}", "Validation")
-                with col3:
-                    improvement = ((adaline_rmse - lstm_rmse) / adaline_rmse * 100)
-                    st.metric("LSTM Improvement", f"{improvement:.2f}%", 
-                             delta="Better" if improvement > 0 else "Worse")
+                if show_lstm and 'lstm_pred' in st.session_state and 'y_val_seq' in st.session_state:
+                    lstm_pred = st.session_state['lstm_pred']
+                    y_val_seq = st.session_state['y_val_seq']
+                    lstm_rmse = calculate_rmse(y_val_seq, lstm_pred)
+                    with col2:
+                        st.metric("LSTM RMSE", f"{lstm_rmse:.6f}", "Validation")
+                    with col3:
+                        improvement = ((adaline_rmse - lstm_rmse) / adaline_rmse * 100)
+                        st.metric("LSTM Improvement", f"{improvement:.2f}%", 
+                                 delta="Better" if improvement > 0 else "Worse")
         
         with tab2:
             st.subheader("Training Dynamics: Error Surface Journey")
@@ -341,7 +345,7 @@ if X_train is not None:
                     marker=dict(size=4)
                 ))
                 
-                if show_lstm:
+                if show_lstm and 'lstm_losses' in st.session_state:
                     lstm_losses = st.session_state['lstm_losses']
                     fig_mse.add_trace(go.Scatter(
                         y=lstm_losses,
@@ -414,9 +418,10 @@ if X_train is not None:
                 line=dict(color='red', width=2)
             ))
             
-            if show_lstm:
+            if show_lstm and 'lstm_pred' in st.session_state and 'y_val_seq' in st.session_state:
                 lstm_pred = st.session_state['lstm_pred']
                 y_val_seq = st.session_state['y_val_seq']
+                sequence_length = 10
                 actual_vis = y_val[sequence_length-1:]
                 lstm_unscaled = scaler_y.inverse_transform(lstm_pred)
                 actual_vis_unscaled = scaler_y.inverse_transform(actual_vis)
@@ -484,7 +489,14 @@ if X_train is not None:
                     'Min Error': [np.min(adaline_error)]
                 }
                 
-                if show_lstm:
+                if show_lstm and 'lstm_pred' in st.session_state and 'y_val_seq' in st.session_state:
+                    lstm_pred = st.session_state['lstm_pred']
+                    y_val_seq = st.session_state['y_val_seq']
+                    sequence_length = 10
+                    actual_vis = y_val[sequence_length-1:]
+                    lstm_unscaled = scaler_y.inverse_transform(lstm_pred)
+                    actual_vis_unscaled = scaler_y.inverse_transform(actual_vis)
+                    lstm_error = np.linalg.norm(actual_vis_unscaled - lstm_unscaled, axis=1)
                     stats_data['Model'].append('LSTM')
                     stats_data['Mean Error'].append(np.mean(lstm_error))
                     stats_data['Std Error'].append(np.std(lstm_error))
@@ -517,15 +529,18 @@ if X_train is not None:
                 st.write(f"**Concept Drift Alerts**: {len(alerts)}")
             
             with col2:
-                if show_lstm:
+                if show_lstm and 'lstm_losses' in st.session_state and 'lstm_pred' in st.session_state:
                     st.markdown("### 🧠 LSTM Model")
                     lstm_losses = st.session_state['lstm_losses']
+                    lstm_pred = st.session_state['lstm_pred']
+                    y_val_seq = st.session_state.get('y_val_seq')
                     st.write(f"**Final Loss**: {lstm_losses[-1]:.6f}")
                     st.write(f"**Initial Loss**: {lstm_losses[0]:.6f}")
                     lstm_improvement = ((lstm_losses[0] - lstm_losses[-1]) / lstm_losses[0] * 100)
                     st.write(f"**Improvement**: {lstm_improvement:.2f}%")
-                    lstm_rmse = calculate_rmse(y_val_seq, lstm_pred)
-                    st.write(f"**RMSE**: {lstm_rmse:.6f}")
+                    if y_val_seq is not None:
+                        lstm_rmse = calculate_rmse(y_val_seq, lstm_pred)
+                        st.write(f"**RMSE**: {lstm_rmse:.6f}")
                     st.write(f"**Architecture**: 1 LSTM layer (64 hidden dims)")
                     if quantization_bits:
                         st.write(f"**Quantization**: {quantization_bits}-bit")
