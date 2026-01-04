@@ -586,36 +586,25 @@ if X_train is not None:
                     st.write(f"**Improvement**: {lstm_improvement:.2f}%")
                     if y_val_seq is not None:
                         # CRITICAL: LSTM was trained to predict y_val_seq
-                        # y_val_seq[i] corresponds to y_val[sequence_length-1+i]
-                        # So we should compare lstm_pred directly to y_val_seq (what it was trained on)
-                        if len(y_val_seq) == len(lstm_pred):
-                            # This is the correct RMSE - comparing to what LSTM was trained to predict
-                            lstm_rmse_correct = calculate_rmse(y_val_seq, lstm_pred)
-                            st.write(f"**RMSE (Correct - vs Training Targets)**: {lstm_rmse_correct:.6f}")
-                            
-                            # For comparison with Adaline, align to same validation points
-                            sequence_length = st.session_state.get('sequence_length', 10)
-                            # y_val_seq[0] corresponds to y_val[sequence_length-1]
-                            # So y_val_seq aligns with y_val[sequence_length-1:]
-                            actual_vis = y_val[sequence_length-1:]
-                            min_len = min(len(actual_vis), len(lstm_pred), len(y_val_seq))
-                            if min_len > 0:
-                                # Compare on the same aligned subset
-                                lstm_rmse_aligned = calculate_rmse(actual_vis[:min_len], lstm_pred[:min_len])
-                                # Also verify against y_val_seq for consistency
-                                lstm_rmse_seq_check = calculate_rmse(y_val_seq[:min_len], lstm_pred[:min_len])
-                                
-                                st.write(f"**RMSE (Aligned with Adaline)**: {lstm_rmse_aligned:.6f}")
-                                if abs(lstm_rmse_aligned - lstm_rmse_seq_check) > 0.01:
-                                    st.warning(f"⚠️ Alignment issue detected! Seq RMSE: {lstm_rmse_seq_check:.6f}")
-                                
-                                lstm_rmse = lstm_rmse_aligned
-                            else:
-                                lstm_rmse = lstm_rmse_correct
-                        else:
+                        # The correct RMSE is comparing lstm_pred directly to y_val_seq
+                        if len(y_val_seq) != len(lstm_pred):
                             st.error(f"❌ Shape mismatch: y_val_seq {y_val_seq.shape} vs lstm_pred {lstm_pred.shape}")
                             st.error("This indicates a problem with LSTM training or prediction!")
                             lstm_rmse = 0.0
+                        else:
+                            # This is the CORRECT RMSE - LSTM predicts y_val_seq, so compare to y_val_seq
+                            lstm_rmse = calculate_rmse(y_val_seq, lstm_pred)
+                            st.write(f"**RMSE (Validation)**: {lstm_rmse:.6f}")
+                            
+                            # Verify alignment: y_val_seq should align with y_val[sequence_length-1:]
+                            sequence_length = st.session_state.get('sequence_length', 10)
+                            actual_vis = y_val[sequence_length-1:]
+                            
+                            if len(actual_vis) == len(y_val_seq):
+                                # They should be the same - verify
+                                lstm_rmse_check = calculate_rmse(actual_vis, lstm_pred)
+                                if abs(lstm_rmse - lstm_rmse_check) > 0.001:
+                                    st.warning(f"⚠️ Alignment check: {lstm_rmse_check:.6f} (should match)")
                         
                         # Overfitting indicator
                         if lstm_losses[-1] < 0.001 and lstm_rmse > 0.3:
