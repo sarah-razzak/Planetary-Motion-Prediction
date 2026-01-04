@@ -108,6 +108,17 @@ lstm_epochs = st.sidebar.slider(
     disabled=not train_lstm
 )
 
+lstm_lr = st.sidebar.slider(
+    "LSTM Learning Rate",
+    min_value=0.0001,
+    max_value=0.01,
+    value=0.001,
+    step=0.0001,
+    format="%.4f",
+    disabled=not train_lstm,
+    help="Lower learning rate can help prevent overfitting"
+)
+
 # Load data
 @st.cache_data
 def load_data():
@@ -125,6 +136,7 @@ def load_data():
 X_train, y_train, X_val, y_val, scaler_X, scaler_y, dates = load_data()
 
 def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=50, batch_size=32, lr=0.001):
+    """Train LSTM model with progress tracking."""
     """Train LSTM model."""
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -205,7 +217,7 @@ if X_train is not None:
                 
                 lstm_losses = train_lstm_model(
                     lstm_model, X_train_seq, y_train_seq,
-                    X_val_seq, y_val_seq, epochs=lstm_epochs
+                    X_val_seq, y_val_seq, epochs=lstm_epochs, lr=lstm_lr
                 )
                 
                 # Get predictions
