@@ -288,7 +288,12 @@ if X_train is not None:
                     # Align predictions
                     sequence_length = 10
                     actual_vis = y_val[sequence_length-1:]
-                    lstm_unscaled = scaler_y.inverse_transform(lstm_pred)
+                    # Ensure same length
+                    min_len = min(len(actual_vis), len(lstm_pred))
+                    actual_vis = actual_vis[:min_len]
+                    lstm_pred_aligned = lstm_pred[:min_len]
+                    
+                    lstm_unscaled = scaler_y.inverse_transform(lstm_pred_aligned)
                     actual_vis_unscaled = scaler_y.inverse_transform(actual_vis)
                 
                 fig_3d.add_trace(go.Scatter3d(
@@ -321,6 +326,7 @@ if X_train is not None:
                 if show_lstm and 'lstm_pred' in st.session_state and 'y_val_seq' in st.session_state:
                     lstm_pred = st.session_state['lstm_pred']
                     y_val_seq = st.session_state['y_val_seq']
+                    # Use y_val_seq directly for RMSE (they're already aligned)
                     lstm_rmse = calculate_rmse(y_val_seq, lstm_pred)
                     with col2:
                         st.metric("LSTM RMSE", f"{lstm_rmse:.6f}", "Validation")
@@ -422,8 +428,14 @@ if X_train is not None:
                 lstm_pred = st.session_state['lstm_pred']
                 y_val_seq = st.session_state['y_val_seq']
                 sequence_length = 10
+                # Align actual data with LSTM predictions (account for sequence length)
                 actual_vis = y_val[sequence_length-1:]
-                lstm_unscaled = scaler_y.inverse_transform(lstm_pred)
+                # Ensure same length
+                min_len = min(len(actual_vis), len(lstm_pred))
+                actual_vis = actual_vis[:min_len]
+                lstm_pred_aligned = lstm_pred[:min_len]
+                
+                lstm_unscaled = scaler_y.inverse_transform(lstm_pred_aligned)
                 actual_vis_unscaled = scaler_y.inverse_transform(actual_vis)
                 lstm_error = np.linalg.norm(actual_vis_unscaled - lstm_unscaled, axis=1)
                 
@@ -494,7 +506,12 @@ if X_train is not None:
                     y_val_seq = st.session_state['y_val_seq']
                     sequence_length = 10
                     actual_vis = y_val[sequence_length-1:]
-                    lstm_unscaled = scaler_y.inverse_transform(lstm_pred)
+                    # Ensure same length
+                    min_len = min(len(actual_vis), len(lstm_pred))
+                    actual_vis = actual_vis[:min_len]
+                    lstm_pred_aligned = lstm_pred[:min_len]
+                    
+                    lstm_unscaled = scaler_y.inverse_transform(lstm_pred_aligned)
                     actual_vis_unscaled = scaler_y.inverse_transform(actual_vis)
                     lstm_error = np.linalg.norm(actual_vis_unscaled - lstm_unscaled, axis=1)
                     stats_data['Model'].append('LSTM')
