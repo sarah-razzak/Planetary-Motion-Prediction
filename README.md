@@ -16,6 +16,13 @@ A machine learning project that implements Adaline (1960s) and LSTM (2026-era) m
 - **3D Visualization**: Comparative analysis of actual vs. predicted trajectories
 - **Computational Efficiency**: Benchmarking inference times for onboard satellite applications
 
+### 2026 Enhancements
+
+- **Physics-Informed Gradient Descent (PIGD)**: Adds Kepler's Second Law constraint to loss function
+- **Concept Drift Detection**: Monitors error trends to detect when linear models fail
+- **Quantization Support**: Simulates edge chip constraints (4-bit, 8-bit) for both models
+- **Interactive Dashboard**: Streamlit-based error surface visualization with learning rate controls
+
 ## 🚀 Installation
 
 ### Prerequisites
@@ -64,18 +71,35 @@ python main.py
 This will:
 1. Fetch Apophis data from NASA JPL Horizons (Jan 2026 - Jan 2030)
 2. Normalize the data using StandardScaler
-3. Train the Adaline model (100 epochs)
+3. Train the Adaline model (100 epochs) with optional PIGD
 4. Train the LSTM model (50 epochs)
-5. Generate 3D visualizations comparing predictions
-6. Print performance metrics and computational efficiency
+5. Test quantization robustness (4-bit, 8-bit)
+6. Generate 3D visualizations comparing predictions
+7. Print performance metrics and computational efficiency
+
+### Interactive Dashboard
+
+Launch the interactive error surface dashboard:
+
+```bash
+streamlit run dashboard.py
+```
+
+The dashboard allows you to:
+- Adjust learning rate (η) and see its effect on training
+- Enable/disable Physics-Informed Gradient Descent (PIGD)
+- Test quantization levels (4-bit, 8-bit)
+- Visualize the error surface "bowl" in real-time
+- See concept drift alerts when linear models struggle
 
 ### Module Structure
 
 ```
 Planetary-Motion-Prediction/
 ├── data.py          # Data acquisition and preprocessing
-├── model.py         # Adaline and LSTM model implementations
+├── model.py         # Adaline and LSTM model implementations (with 2026 enhancements)
 ├── main.py          # Main execution script
+├── dashboard.py     # Interactive Streamlit dashboard
 ├── requirements.txt # Python dependencies
 ├── README.md        # This file
 └── venv/            # Virtual environment (not in git)
