@@ -305,9 +305,11 @@ def prepare_sequences(X, y, sequence_length=10):
     
     for i in range(len(X) - sequence_length):
         X_seq.append(X[i:i+sequence_length])
-        # Target should be the NEXT position after the sequence
-        # If sequence is X[i:i+sequence_length], predict y[i+sequence_length]
-        y_seq.append(y[i+sequence_length])
+        # Target: predict position at time i+sequence_length
+        # X[i:i+sequence_length] covers times i to i+sequence_length-1
+        # y[j] = position at time j+1
+        # So position at time i+sequence_length = y[i+sequence_length-1]
+        y_seq.append(y[i+sequence_length-1])
     
     return np.array(X_seq), np.array(y_seq)
 
