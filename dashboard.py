@@ -262,7 +262,7 @@ if X_train is not None:
                     # Validate sequences
                     if len(X_train_seq) == 0 or len(X_val_seq) == 0:
                         st.error("Not enough data to create sequences. Need at least sequence_length samples.")
-                        return
+                        st.stop()
                     
                     lstm_model = LSTMPredictor(
                         input_dim=X_train.shape[1],
@@ -286,7 +286,7 @@ if X_train is not None:
                     st.error(f"Error training LSTM model: {str(e)}")
                     import traceback
                     st.code(traceback.format_exc())
-                    return
+                    st.stop()
                 
                 # Get predictions
                 lstm_model.eval()
