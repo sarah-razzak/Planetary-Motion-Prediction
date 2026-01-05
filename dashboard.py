@@ -2,7 +2,7 @@
 Interactive Error Surface Dashboard
 
 A comprehensive Streamlit dashboard for visualizing the error surface, training dynamics,
-and comparing Adaline vs LSTM models. All visualizations integrated from main.py.
+and comparing Linear Regression vs LSTM models. All visualizations integrated from main.py.
 """
 
 try:
@@ -41,14 +41,14 @@ if not STREAMLIT_AVAILABLE:
 
 # Page config
 st.set_page_config(
-    page_title="The Ancient Predictor - Interactive Dashboard",
+    page_title="Linear Regression vs LSTM - Interactive Dashboard",
     page_icon="🌌",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.title("🌌 The Ancient Predictor: Interactive Dashboard")
-st.markdown("### Compare Adaline (1960s) vs LSTM (2026-era) with real NASA asteroid data")
+st.title("🌌 Linear Regression vs LSTM: Interactive Dashboard")
+st.markdown("### Compare Linear Regression vs LSTM with real NASA asteroid data")
 
 # Sidebar controls
 st.sidebar.header("⚙️ Training Parameters")
@@ -82,7 +82,7 @@ quantization_bits = st.sidebar.selectbox(
     "Quantization (Edge Chip Simulation)",
     options=[None, 8, 4],
     format_func=lambda x: "Full Precision" if x is None else f"{x}-bit",
-    help="Simulate edge chip constraints (2026 feature)"
+    help="Simulate edge chip constraints"
 )
 
 epochs = st.sidebar.slider(
@@ -94,7 +94,7 @@ epochs = st.sidebar.slider(
 )
 
 train_lstm = st.sidebar.checkbox(
-    "Train LSTM Model (2026-era)",
+    "Train LSTM Model",
     value=True,
     help="Compare with modern LSTM architecture"
 )
@@ -103,7 +103,7 @@ lstm_epochs = st.sidebar.slider(
     "LSTM Epochs",
     min_value=10,
     max_value=200,  # Increased max to allow 150
-    value=100,  # Optimal value from hyperparameter optimization
+    value=150,  # Optimal value from hyperparameter optimization
     step=10,
     disabled=not train_lstm
 )
@@ -136,11 +136,13 @@ def load_data():
 
 X_train, y_train, X_val, y_val, scaler_X, scaler_y, dates = load_data()
 
-def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=100, batch_size=32, lr=0.0005):
+def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=150, batch_size=32, lr=0.0005):
     """Train LSTM model with progress tracking."""
     """Train LSTM model."""
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    # Learning rate scheduler to reduce LR when validation loss plateaus
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=False)
     
     X_train_tensor = torch.FloatTensor(X_train)
     y_train_tensor = torch.FloatTensor(y_train)
@@ -148,6 +150,12 @@ def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=100, batch_si
     y_val_tensor = torch.FloatTensor(y_val)
     
     train_losses = []
+    val_losses = []
+    best_val_loss = float('inf')
+    patience = 15  # Early stopping patience
+    patience_counter = 0
+    best_model_state = None
+    
     progress_bar = st.progress(0)
     status_text = st.empty()
     
@@ -164,6 +172,8 @@ def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=100, batch_si
             outputs = model(batch_X)
             loss = criterion(outputs, batch_y)
             loss.backward()
+            # Gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             
             epoch_loss += loss.item()
@@ -172,8 +182,32 @@ def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=100, batch_si
         avg_loss = epoch_loss / n_batches
         train_losses.append(avg_loss)
         
+        # Validation
+        model.eval()
+        with torch.no_grad():
+            val_outputs = model(X_val_tensor)
+            val_loss = criterion(val_outputs, y_val_tensor).item()
+        val_losses.append(val_loss)
+        
+        # Learning rate scheduling
+        scheduler.step(val_loss)
+        
+        # Early stopping: save best model and check for improvement
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            best_model_state = model.state_dict().copy()
+        else:
+            patience_counter += 1
+        
         progress_bar.progress((epoch + 1) / epochs)
-        status_text.text(f"Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f}")
+        status_text.text(f"Epoch {epoch + 1}/{epochs}, Train Loss: {avg_loss:.6f}, Val Loss: {val_loss:.6f}")
+        
+        # Early stopping
+        if patience_counter >= patience:
+            status_text.text(f"Early stopping at epoch {epoch + 1} (best val loss: {best_val_loss:.6f})")
+            model.load_state_dict(best_model_state)
+            break
     
     progress_bar.empty()
     status_text.empty()
@@ -182,8 +216,8 @@ def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=100, batch_si
 if X_train is not None:
     # Train models
     if st.sidebar.button("🚀 Train Models", type="primary"):
-        # Train Adaline
-        with st.spinner("Training Adaline model..."):
+        # Train Linear Regression
+        with st.spinner("Training Linear Regression model..."):
             adaline = Adaline(
                 n_features=X_train.shape[1],
                 n_outputs=3,
@@ -205,14 +239,15 @@ if X_train is not None:
         # Train LSTM if requested
         if train_lstm and TORCH_AVAILABLE:
             with st.spinner("Training LSTM model..."):
-                sequence_length = 10
+                sequence_length = 10  # Optimal from hyperparameter optimization
                 X_train_seq, y_train_seq = prepare_sequences(X_train, y_train, sequence_length)
                 X_val_seq, y_val_seq = prepare_sequences(X_val, y_val, sequence_length)
                 
                 lstm_model = LSTMPredictor(
                     input_dim=X_train.shape[1],
-                    hidden_dim=64,  # Optimal value from hyperparameter optimization
+                    hidden_dim=128,  # Optimal value from hyperparameter optimization
                     output_dim=3,
+                    num_layers=2,  # Deeper network for better performance
                     dropout=0.0,  # Optimal value from hyperparameter optimization
                     quantization_bits=quantization_bits
                 )
@@ -296,7 +331,7 @@ if X_train is not None:
                 y=adaline_unscaled[:, 1],
                 z=adaline_unscaled[:, 2],
                 mode='lines',
-                name='Adaline (Linear)',
+                name='Linear Regression',
                 line=dict(color='red', width=3)
             ))
             
@@ -306,7 +341,7 @@ if X_train is not None:
                 y_val_seq = st.session_state.get('y_val_seq')
                 if lstm_pred is not None and y_val_seq is not None:
                     # Align predictions
-                    sequence_length = 10
+                    sequence_length = st.session_state.get('sequence_length', 10)
                     actual_vis = y_val[sequence_length-1:]
                     # Ensure same length
                     min_len = min(len(actual_vis), len(lstm_pred))
@@ -342,7 +377,7 @@ if X_train is not None:
             # Metrics comparison
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Adaline RMSE", f"{adaline_rmse:.6f}", "Validation")
+                st.metric("Linear Regression RMSE", f"{adaline_rmse:.6f}", "Validation")
                 if show_lstm and 'lstm_pred' in st.session_state and 'y_val_seq' in st.session_state:
                     lstm_pred = st.session_state['lstm_pred']
                     y_val_seq = st.session_state['y_val_seq']
@@ -351,7 +386,7 @@ if X_train is not None:
                     lstm_rmse_seq = calculate_rmse(y_val_seq, lstm_pred)
                     
                     # Also calculate on aligned validation set (same as Adaline) for fair comparison
-                    sequence_length = 10
+                    sequence_length = st.session_state.get('sequence_length', 10)
                     actual_vis = y_val[sequence_length-1:]
                     min_len = min(len(actual_vis), len(lstm_pred))
                     lstm_rmse_aligned = calculate_rmse(actual_vis[:min_len], lstm_pred[:min_len])
@@ -363,7 +398,7 @@ if X_train is not None:
                     with col3:
                         # Compare with Adaline using aligned RMSE
                         improvement = ((adaline_rmse - lstm_rmse_aligned) / adaline_rmse * 100)
-                        st.metric("LSTM vs Adaline", f"{improvement:.2f}%", 
+                        st.metric("LSTM vs Linear Regression", f"{improvement:.2f}%", 
                                  delta="Better" if improvement > 0 else "Worse")
         
         with tab2:
@@ -377,7 +412,7 @@ if X_train is not None:
                 fig_mse.add_trace(go.Scatter(
                     y=mse_history,
                     mode='lines+markers',
-                    name='Adaline MSE',
+                    name='Linear Regression MSE',
                     line=dict(color='blue', width=2),
                     marker=dict(size=4)
                 ))
@@ -442,7 +477,7 @@ if X_train is not None:
                 st.success("✅ Learning rate is in a good range for stable training.")
         
         with tab3:
-            st.subheader("Error Analysis: Adaline vs LSTM")
+            st.subheader("Error Analysis: Linear Regression vs LSTM")
             
             # Error over time
             adaline_error = np.linalg.norm(actual_unscaled - adaline_unscaled, axis=1)
@@ -451,14 +486,14 @@ if X_train is not None:
             fig_error_time.add_trace(go.Scatter(
                 y=adaline_error,
                 mode='lines',
-                name='Adaline Error',
+                name='Linear Regression Error',
                 line=dict(color='red', width=2)
             ))
             
             if show_lstm and 'lstm_pred' in st.session_state and 'y_val_seq' in st.session_state:
                 lstm_pred = st.session_state['lstm_pred']
                 y_val_seq = st.session_state['y_val_seq']
-                sequence_length = 10
+                sequence_length = st.session_state.get('sequence_length', 10)
                 # Align actual data with LSTM predictions (account for sequence length)
                 actual_vis = y_val[sequence_length-1:]
                 # Ensure same length
@@ -494,7 +529,7 @@ if X_train is not None:
                 fig_dist = go.Figure()
                 fig_dist.add_trace(go.Histogram(
                     x=adaline_error,
-                    name='Adaline',
+                    name='Linear Regression',
                     nbinsx=50,
                     opacity=0.7,
                     marker_color='red'
@@ -525,7 +560,7 @@ if X_train is not None:
                 st.subheader("Error Statistics")
                 
                 stats_data = {
-                    'Model': ['Adaline'],
+                    'Model': ['Linear Regression'],
                     'Mean Error': [np.mean(adaline_error)],
                     'Std Error': [np.std(adaline_error)],
                     'Max Error': [np.max(adaline_error)],
@@ -561,7 +596,7 @@ if X_train is not None:
             col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown("### 📊 Adaline Model")
+                st.markdown("### 📊 Linear Regression Model")
                 st.write(f"**Final MSE**: {mse_history[-1]:.6f}")
                 st.write(f"**Initial MSE**: {mse_history[0]:.6f}")
                 improvement = ((mse_history[0] - mse_history[-1]) / mse_history[0] * 100)
@@ -614,7 +649,7 @@ if X_train is not None:
                             st.write("  - Reducing LSTM epochs")
                             st.write("  - Lowering learning rate")
                             st.write("  - Adding dropout regularization")
-                    st.write(f"**Architecture**: 1 LSTM layer (64 hidden dims, dropout=0.0)")
+                    st.write(f"**Architecture**: 2 LSTM layers (128 hidden dims, dropout=0.0)")
                     if quantization_bits:
                         st.write(f"**Quantization**: {quantization_bits}-bit")
             
@@ -671,12 +706,12 @@ if X_train is not None:
             # Educational content
             with st.expander("📚 Understanding the Models"):
                 st.markdown("""
-                **Adaline (1960s):**
+                **Linear Regression:**
                 - Uses Widrow-Hoff Delta Rule: w = w + η(y - ŷ)x
                 - Linear activation function for regression
-                - Struggles with non-linear trajectories (Geometrical Crisis)
+                - Struggles with non-linear trajectories
                 
-                **LSTM (2026-era):**
+                **LSTM:**
                 - Maintains hidden state memory across time steps
                 - Captures sequential patterns and non-linear dynamics
                 - Better at predicting curved orbital trajectories

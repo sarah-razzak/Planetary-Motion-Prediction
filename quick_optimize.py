@@ -32,15 +32,26 @@ def calculate_rmse(y_true, y_pred):
 
 
 def train_lstm(model, X_train, y_train, X_val, y_val, epochs=50, batch_size=32, lr=0.001):
-    """Train LSTM model using PyTorch."""
+    """Train LSTM model using PyTorch with early stopping and gradient clipping."""
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=False)
     
     X_train_tensor = torch.FloatTensor(X_train)
     y_train_tensor = torch.FloatTensor(y_train)
+    X_val_tensor = torch.FloatTensor(X_val)
+    y_val_tensor = torch.FloatTensor(y_val)
+    
+    best_val_loss = float('inf')
+    patience = 15
+    patience_counter = 0
+    best_model_state = None
     
     for epoch in range(epochs):
         model.train()
+        epoch_loss = 0.0
+        n_batches = 0
+        
         for i in range(0, len(X_train), batch_size):
             batch_X = X_train_tensor[i:i+batch_size]
             batch_y = y_train_tensor[i:i+batch_size]
@@ -49,7 +60,34 @@ def train_lstm(model, X_train, y_train, X_val, y_val, epochs=50, batch_size=32, 
             outputs = model(batch_X)
             loss = criterion(outputs, batch_y)
             loss.backward()
+            
+            # Gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
             optimizer.step()
+            epoch_loss += loss.item()
+            n_batches += 1
+        
+        # Validation
+        model.eval()
+        with torch.no_grad():
+            val_outputs = model(X_val_tensor)
+            val_loss = criterion(val_outputs, y_val_tensor).item()
+        
+        scheduler.step(val_loss)
+        
+        # Early stopping
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            best_model_state = model.state_dict().copy()
+        else:
+            patience_counter += 1
+            if patience_counter >= patience:
+                # Restore best model
+                if best_model_state is not None:
+                    model.load_state_dict(best_model_state)
+                break
     
     return []
 
@@ -57,7 +95,7 @@ def train_lstm(model, X_train, y_train, X_val, y_val, epochs=50, batch_size=32, 
 def optimize_adaline_quick(X_train, y_train, X_val, y_val):
     """Quick ADALINE optimization with smaller search space."""
     print("\n" + "=" * 80)
-    print("ADALINE Quick Optimization")
+    print("ADALINE Quick Optimization (Standard)")
     print("=" * 80)
     
     # Smaller search space
@@ -87,6 +125,55 @@ def optimize_adaline_quick(X_train, y_train, X_val, y_val):
             print(f"  ⭐ New best!")
     
     print(f"\nBest ADALINE: lr={best_params['learning_rate']:.4f}, epochs={best_params['epochs']}, RMSE={best_params['val_rmse']:.6f}")
+    return best_params
+
+
+def optimize_adaline_pigd_quick(X_train, y_train, X_val, y_val):
+    """Quick ADALINE optimization with PIGD enabled."""
+    print("\n" + "=" * 80)
+    print("ADALINE Quick Optimization (with PIGD)")
+    print("=" * 80)
+    
+    # Search space for PIGD
+    learning_rates = [0.005, 0.01, 0.02, 0.05]
+    epochs_list = [100, 150]
+    lambda_pigd_values = [0.01, 0.05, 0.1, 0.2, 0.5]
+    
+    best_rmse = float('inf')
+    best_params = None
+    
+    total = len(learning_rates) * len(epochs_list) * len(lambda_pigd_values)
+    current = 0
+    
+    for lr, epochs, lambda_pigd in product(learning_rates, epochs_list, lambda_pigd_values):
+        current += 1
+        print(f"[{current}/{total}] lr={lr:.3f}, epochs={epochs}, lambda_pigd={lambda_pigd:.2f}...", end=" ")
+        
+        model = Adaline(
+            n_features=X_train.shape[1], 
+            n_outputs=3, 
+            learning_rate=lr,
+            use_pigd=True,
+            lambda_pigd=lambda_pigd
+        )
+        model.train(X_train, y_train, epochs=epochs, verbose=False)
+        
+        val_pred = model.predict(X_val)
+        val_rmse = calculate_rmse(y_val, val_pred)
+        print(f"RMSE: {val_rmse:.6f}")
+        
+        if val_rmse < best_rmse:
+            best_rmse = val_rmse
+            best_params = {
+                'learning_rate': lr, 
+                'epochs': epochs, 
+                'lambda_pigd': lambda_pigd,
+                'val_rmse': val_rmse
+            }
+            print(f"  ⭐ New best!")
+    
+    print(f"\nBest ADALINE (PIGD): lr={best_params['learning_rate']:.4f}, epochs={best_params['epochs']}, "
+          f"lambda_pigd={best_params['lambda_pigd']:.2f}, RMSE={best_params['val_rmse']:.6f}")
     return best_params
 
 
@@ -126,7 +213,7 @@ def optimize_lstm_quick(X_train, y_train, X_val, y_val):
                 input_dim=X_train.shape[1],
                 hidden_dim=hidden_dim,
                 output_dim=3,
-                num_layers=1,
+                num_layers=2,  # Deeper network
                 dropout=dropout
             )
             
@@ -207,12 +294,14 @@ def main():
     
     # Optimize
     adaline_best = optimize_adaline_quick(X_train, y_train, X_val, y_val)
+    adaline_pigd_best = optimize_adaline_pigd_quick(X_train, y_train, X_val, y_val)
     lstm_best = optimize_lstm_quick(X_train, y_train, X_val, y_val) if TORCH_AVAILABLE else None
     
     # Save results
     results = {
         'timestamp': datetime.now().isoformat(),
         'adaline': adaline_best,
+        'adaline_pigd': adaline_pigd_best,
         'lstm': lstm_best
     }
     
@@ -222,9 +311,16 @@ def main():
     print("\n" + "=" * 80)
     print("OPTIMAL HYPERPARAMETERS")
     print("=" * 80)
-    print("\nADALINE:")
+    print("\nADALINE (Standard):")
     print(f"  learning_rate = {adaline_best['learning_rate']:.4f}")
     print(f"  epochs = {adaline_best['epochs']}")
+    print(f"  RMSE = {adaline_best['val_rmse']:.6f}")
+    
+    print("\nADALINE (with PIGD):")
+    print(f"  learning_rate = {adaline_pigd_best['learning_rate']:.4f}")
+    print(f"  epochs = {adaline_pigd_best['epochs']}")
+    print(f"  lambda_pigd = {adaline_pigd_best['lambda_pigd']:.2f}")
+    print(f"  RMSE = {adaline_pigd_best['val_rmse']:.6f}")
     
     if lstm_best:
         print("\nLSTM:")
@@ -232,6 +328,7 @@ def main():
         print(f"  hidden_dim = {lstm_best['hidden_dim']}")
         print(f"  dropout = {lstm_best['dropout']:.2f}")
         print(f"  epochs = {lstm_best['epochs']}")
+        print(f"  RMSE = {lstm_best['val_rmse']:.6f}")
     
     print("\nResults saved to: quick_optimization_results.json")
     print("=" * 80)

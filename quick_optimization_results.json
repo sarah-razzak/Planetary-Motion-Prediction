@@ -1,15 +1,21 @@
 {
-  "timestamp": "2026-01-04T20:18:10.655776",
+  "timestamp": "2026-01-05T08:11:54.198495",
   "adaline": {
     "learning_rate": 0.05,
     "epochs": 150,
-    "val_rmse": 0.06038866276084133
+    "val_rmse": 0.06259649871321785
+  },
+  "adaline_pigd": {
+    "learning_rate": 0.05,
+    "epochs": 150,
+    "lambda_pigd": 0.5,
+    "val_rmse": 0.05963735546389725
   },
   "lstm": {
     "learning_rate": 0.0005,
-    "hidden_dim": 64,
+    "hidden_dim": 128,
     "dropout": 0.0,
     "epochs": 100,
-    "val_rmse": 0.10743330530226752
+    "val_rmse": 0.004030310685865892
   }
 }

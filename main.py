@@ -72,6 +72,11 @@ def train_lstm(model, X_train, y_train, X_val, y_val, epochs=50, batch_size=32, 
     y_val_tensor = torch.FloatTensor(y_val)
     
     train_losses = []
+    val_losses = []
+    best_val_loss = float('inf')
+    patience = 15  # Early stopping patience
+    patience_counter = 0
+    best_model_state = None
     
     for epoch in range(epochs):
         model.train()
@@ -87,6 +92,8 @@ def train_lstm(model, X_train, y_train, X_val, y_val, epochs=50, batch_size=32, 
             outputs = model(batch_X)
             loss = criterion(outputs, batch_y)
             loss.backward()
+            # Gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             
             epoch_loss += loss.item()
@@ -96,12 +103,34 @@ def train_lstm(model, X_train, y_train, X_val, y_val, epochs=50, batch_size=32, 
         train_losses.append(avg_loss)
         
         # Validation
+        model.eval()
+        with torch.no_grad():
+            val_outputs = model(X_val_tensor)
+            val_loss = criterion(val_outputs, y_val_tensor).item()
+        val_losses.append(val_loss)
+        
+        # Learning rate scheduling
+        scheduler.step(val_loss)
+        
+        # Early stopping: save best model and check for improvement
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            # Save best model state
+            best_model_state = model.state_dict().copy()
+        else:
+            patience_counter += 1
+        
         if (epoch + 1) % 10 == 0:
-            model.eval()
-            with torch.no_grad():
-                val_outputs = model(X_val_tensor)
-                val_loss = criterion(val_outputs, y_val_tensor).item()
             print(f"Epoch {epoch + 1}/{epochs}, Train Loss: {avg_loss:.6f}, Val Loss: {val_loss:.6f}")
+        
+        # Early stopping
+        if patience_counter >= patience:
+            print(f"\nEarly stopping at epoch {epoch + 1} (no improvement for {patience} epochs)")
+            print(f"Best validation loss: {best_val_loss:.6f} at epoch {epoch + 1 - patience}")
+            # Restore best model
+            model.load_state_dict(best_model_state)
+            break
     
     return train_losses
 
@@ -351,18 +380,21 @@ def main():
     print()
     
     # Prepare sequences for LSTM
-    sequence_length = 10
+    sequence_length = 10  # Optimal from hyperparameter optimization
     X_train_seq, y_train_seq = prepare_sequences(X_train, y_train, sequence_length)
     X_val_seq, y_val_seq = prepare_sequences(X_val, y_val, sequence_length)
     
     print(f"LSTM sequence shape: {X_train_seq.shape}")
     
     # LSTM with optimized hyperparameters
-    lstm_model = LSTMPredictor(input_dim=X_train.shape[1], hidden_dim=64, output_dim=3, dropout=0.0)
+    # Set random seed for reproducibility
+    torch.manual_seed(42)
+    np.random.seed(42)
+    lstm_model = LSTMPredictor(input_dim=X_train.shape[1], hidden_dim=128, output_dim=3, num_layers=2, dropout=0.0)
     
     train_losses = train_lstm(
         lstm_model, X_train_seq, y_train_seq,
-        X_val_seq, y_val_seq, epochs=100, batch_size=32, lr=0.0005
+        X_val_seq, y_val_seq, epochs=150, batch_size=32, lr=0.0005
     )
     
     # Predictions
@@ -434,7 +466,8 @@ def main():
         for bits, name in zip(quantization_levels, quantization_names):
             lstm_quant = LSTMPredictor(
                 input_dim=X_train.shape[1],
-                hidden_dim=64,  # Match trained model architecture
+                hidden_dim=128,  # Match trained model architecture
+                num_layers=2,  # Match trained model architecture
                 output_dim=3,
                 dropout=0.0,  # Match trained model architecture
                 quantization_bits=bits

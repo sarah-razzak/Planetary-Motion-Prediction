@@ -311,7 +311,7 @@ class LSTMPredictor(nn.Module):
     """
     
     def __init__(self, input_dim: int = 7, hidden_dim: int = 64, output_dim: int = 3, 
-                 num_layers: int = 1, quantization_bits: int = None, dropout: float = 0.2):
+                 num_layers: int = 2, quantization_bits: int = None, dropout: float = 0.2):
         """
         Initialize LSTM model.
         
@@ -346,6 +346,15 @@ class LSTMPredictor(nn.Module):
         
         # Linear head: maps hidden state to output position
         self.fc = nn.Linear(hidden_dim, output_dim)
+        
+        # Initialize weights for better training stability
+        self._initialize_weights()
+    
+    def _initialize_weights(self):
+        """Initialize weights using Xavier/Glorot uniform for better convergence."""
+        # Initialize linear layer with Xavier uniform
+        nn.init.xavier_uniform_(self.fc.weight)
+        nn.init.zeros_(self.fc.bias)
     
     def _quantize_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
         """Simulate quantization for edge chip constraints."""
@@ -385,8 +394,9 @@ class LSTMPredictor(nn.Module):
         # hidden: tuple of (h_n, c_n) where h_n is the final hidden state
         lstm_out, hidden = self.lstm(x)
         
-        # Use the final hidden state (last time step) for prediction
-        # lstm_out[:, -1, :] extracts the hidden state at the last time step
+        # Use the output from the last time step of the last layer
+        # This is the standard approach for sequence-to-one prediction
+        # lstm_out[:, -1, :] gives us (batch_size, hidden_dim) from the final time step
         final_hidden = lstm_out[:, -1, :]
         
         # Apply dropout for regularization (only during training)
@@ -394,7 +404,17 @@ class LSTMPredictor(nn.Module):
         final_hidden = self.dropout_layer(final_hidden)
         
         # Linear transformation to output space
-        output = self.fc(final_hidden)
+        lstm_output = self.fc(final_hidden)
+        
+        # Residual connection: add the last position from input sequence
+        # This helps the LSTM learn the direct position-to-position relationship
+        # Input format: [Time, X, Y, Z, VX, VY, VZ]
+        # Extract position (X, Y, Z) from the last time step: indices 1:4
+        last_position = x[:, -1, 1:4]  # (batch_size, 3)
+        
+        # Add residual: predict change in position, then add to last position
+        # This is more natural for learning dynamics
+        output = lstm_output + last_position
         
         # Quantize output if enabled
         if use_quantized and self.quantization_bits is not None:
