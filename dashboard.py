@@ -138,11 +138,25 @@ X_train, y_train, X_val, y_val, scaler_X, scaler_y, dates = load_data()
 
 def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=150, batch_size=32, lr=0.0005):
     """Train LSTM model with progress tracking."""
-    """Train LSTM model."""
+    # Ensure model is in training mode and has parameters
+    model.train()
+    
+    # Check if model has parameters
+    param_count = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    if param_count == 0:
+        raise ValueError("Model has no trainable parameters")
+    
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    
     # Learning rate scheduler to reduce LR when validation loss plateaus
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=False)
+    # Wrap in try-except for compatibility
+    try:
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=False)
+    except Exception as e:
+        # If scheduler creation fails, continue without it
+        st.warning(f"Could not create learning rate scheduler: {e}. Continuing without scheduler.")
+        scheduler = None
     
     X_train_tensor = torch.FloatTensor(X_train)
     y_train_tensor = torch.FloatTensor(y_train)
@@ -190,7 +204,8 @@ def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=150, batch_si
         val_losses.append(val_loss)
         
         # Learning rate scheduling
-        scheduler.step(val_loss)
+        if scheduler is not None:
+            scheduler.step(val_loss)
         
         # Early stopping: save best model and check for improvement
         if val_loss < best_val_loss:
@@ -239,23 +254,39 @@ if X_train is not None:
         # Train LSTM if requested
         if train_lstm and TORCH_AVAILABLE:
             with st.spinner("Training LSTM model..."):
-                sequence_length = 10  # Optimal from hyperparameter optimization
-                X_train_seq, y_train_seq = prepare_sequences(X_train, y_train, sequence_length)
-                X_val_seq, y_val_seq = prepare_sequences(X_val, y_val, sequence_length)
-                
-                lstm_model = LSTMPredictor(
-                    input_dim=X_train.shape[1],
-                    hidden_dim=128,  # Optimal value from hyperparameter optimization
-                    output_dim=3,
-                    num_layers=2,  # Deeper network for better performance
-                    dropout=0.0,  # Optimal value from hyperparameter optimization
-                    quantization_bits=quantization_bits
-                )
-                
-                lstm_losses = train_lstm_model(
-                    lstm_model, X_train_seq, y_train_seq,
-                    X_val_seq, y_val_seq, epochs=lstm_epochs, lr=lstm_lr
-                )
+                try:
+                    sequence_length = 10  # Optimal from hyperparameter optimization
+                    X_train_seq, y_train_seq = prepare_sequences(X_train, y_train, sequence_length)
+                    X_val_seq, y_val_seq = prepare_sequences(X_val, y_val, sequence_length)
+                    
+                    # Validate sequences
+                    if len(X_train_seq) == 0 or len(X_val_seq) == 0:
+                        st.error("Not enough data to create sequences. Need at least sequence_length samples.")
+                        return
+                    
+                    lstm_model = LSTMPredictor(
+                        input_dim=X_train.shape[1],
+                        hidden_dim=128,  # Optimal value from hyperparameter optimization
+                        output_dim=3,
+                        num_layers=2,  # Deeper network for better performance
+                        dropout=0.0,  # Optimal value from hyperparameter optimization
+                        quantization_bits=quantization_bits
+                    )
+                    
+                    # Initialize model with a dummy forward pass to ensure it's ready
+                    with torch.no_grad():
+                        dummy_input = torch.FloatTensor(X_train_seq[:1])
+                        _ = lstm_model(dummy_input)
+                    
+                    lstm_losses = train_lstm_model(
+                        lstm_model, X_train_seq, y_train_seq,
+                        X_val_seq, y_val_seq, epochs=lstm_epochs, lr=lstm_lr
+                    )
+                except Exception as e:
+                    st.error(f"Error training LSTM model: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
+                    return
                 
                 # Get predictions
                 lstm_model.eval()

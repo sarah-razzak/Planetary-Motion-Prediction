@@ -41,6 +41,10 @@ ENV/
 *.jpg
 *.pdf
 trajectory_comparison.png
+quick_optimization_results.json
+*.json
+!package.json
+!package-lock.json
 
 # OS
 .DS_Store

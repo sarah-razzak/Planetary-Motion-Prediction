@@ -64,6 +64,7 @@ def train_lstm(model, X_train, y_train, X_val, y_val, epochs=50, batch_size=32, 
     """
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=False)
     
     # Convert to PyTorch tensors
     X_train_tensor = torch.FloatTensor(X_train)
