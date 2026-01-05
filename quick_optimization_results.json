@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-01-04T20:18:10.655776",
+  "adaline": {
+    "learning_rate": 0.05,
+    "epochs": 150,
+    "val_rmse": 0.06038866276084133
+  },
+  "lstm": {
+    "learning_rate": 0.0005,
+    "hidden_dim": 64,
+    "dropout": 0.0,
+    "epochs": 100,
+    "val_rmse": 0.10743330530226752
+  }
+}

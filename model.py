@@ -221,10 +221,10 @@ class Adaline:
             
             # Widrow-Hoff Delta Rule: w = w + η(y - ŷ)x
             # For batch update, we average over all samples
-            # Gradient of MSE w.r.t. weights: ∇w = -(2/n) Σ(y - ŷ)x
-            # Update rule: w = w - η * ∇w = w + (2η/n) Σ(y - ŷ)x
+            # Batch Widrow-Hoff rule: w = w + (η/n) * Σ(y - ŷ)x
+            # where X^T @ error computes Σ(y - ŷ)x over all samples
             
-            # Update weights: w = w + η * (1/n) * X^T * error
+            # Update weights: w = w + (η/n) * X^T * error
             weight_update = self.learning_rate * (1.0 / n_samples) * (X.T @ error)
             
             # Apply physics-informed adjustment if enabled
@@ -390,6 +390,7 @@ class LSTMPredictor(nn.Module):
         final_hidden = lstm_out[:, -1, :]
         
         # Apply dropout for regularization (only during training)
+        # nn.Dropout automatically respects self.training mode
         final_hidden = self.dropout_layer(final_hidden)
         
         # Linear transformation to output space

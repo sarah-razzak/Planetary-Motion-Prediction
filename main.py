@@ -308,10 +308,10 @@ def main():
     print("Implementing Widrow-Hoff Delta Rule: w = w + η(y - ŷ)x")
     print()
     
-    # Standard Adaline
+    # Standard Adaline (with optimized hyperparameters)
     print("Training Standard Adaline...")
-    adaline = Adaline(n_features=X_train.shape[1], n_outputs=3, learning_rate=0.01)
-    adaline.train(X_train, y_train, epochs=100, verbose=True)
+    adaline = Adaline(n_features=X_train.shape[1], n_outputs=3, learning_rate=0.05)
+    adaline.train(X_train, y_train, epochs=150, verbose=True)
     
     # Physics-Informed Adaline (optional demonstration)
     print("\n" + "=" * 80)
@@ -321,11 +321,11 @@ def main():
     adaline_pigd = Adaline(
         n_features=X_train.shape[1], 
         n_outputs=3, 
-        learning_rate=0.01,
+        learning_rate=0.05,
         use_pigd=True,
         lambda_pigd=0.1
     )
-    adaline_pigd.train(X_train, y_train, epochs=100, verbose=True)
+    adaline_pigd.train(X_train, y_train, epochs=150, verbose=True)
     
     if len(adaline_pigd.concept_drift_alerts) > 0:
         print(f"\n⚠️  Concept Drift Alerts: {len(adaline_pigd.concept_drift_alerts)}")
@@ -357,11 +357,12 @@ def main():
     
     print(f"LSTM sequence shape: {X_train_seq.shape}")
     
-    lstm_model = LSTMPredictor(input_dim=X_train.shape[1], hidden_dim=64, output_dim=3)
+    # LSTM with optimized hyperparameters
+    lstm_model = LSTMPredictor(input_dim=X_train.shape[1], hidden_dim=64, output_dim=3, dropout=0.0)
     
     train_losses = train_lstm(
         lstm_model, X_train_seq, y_train_seq,
-        X_val_seq, y_val_seq, epochs=50, batch_size=32, lr=0.001
+        X_val_seq, y_val_seq, epochs=100, batch_size=32, lr=0.0005
     )
     
     # Predictions
@@ -433,8 +434,9 @@ def main():
         for bits, name in zip(quantization_levels, quantization_names):
             lstm_quant = LSTMPredictor(
                 input_dim=X_train.shape[1],
-                hidden_dim=64,
+                hidden_dim=64,  # Match trained model architecture
                 output_dim=3,
+                dropout=0.0,  # Match trained model architecture
                 quantization_bits=bits
             )
             # Copy weights from trained model

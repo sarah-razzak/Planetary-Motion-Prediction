@@ -57,7 +57,7 @@ learning_rate = st.sidebar.slider(
     "Learning Rate (η)",
     min_value=0.001,
     max_value=0.5,
-    value=0.01,
+    value=0.05,  # Optimal value from hyperparameter optimization
     step=0.001,
     help="Controls the step size in gradient descent. Too high = bouncing out of bowl!"
 )
@@ -89,7 +89,7 @@ epochs = st.sidebar.slider(
     "Training Epochs",
     min_value=10,
     max_value=200,
-    value=100,
+    value=150,  # Optimal value from hyperparameter optimization
     step=10
 )
 
@@ -102,8 +102,8 @@ train_lstm = st.sidebar.checkbox(
 lstm_epochs = st.sidebar.slider(
     "LSTM Epochs",
     min_value=10,
-    max_value=100,
-    value=50,
+    max_value=200,  # Increased max to allow 150
+    value=100,  # Optimal value from hyperparameter optimization
     step=10,
     disabled=not train_lstm
 )
@@ -112,7 +112,7 @@ lstm_lr = st.sidebar.slider(
     "LSTM Learning Rate",
     min_value=0.0001,
     max_value=0.01,
-    value=0.001,
+    value=0.0005,  # Optimal value from hyperparameter optimization
     step=0.0001,
     format="%.4f",
     disabled=not train_lstm,
@@ -124,7 +124,8 @@ lstm_lr = st.sidebar.slider(
 def load_data():
     """Load and cache the asteroid data."""
     try:
-        X, y, scaler_X, scaler_y, dates = fetch_apophis_data('2026-01-01', '2026-12-31')
+        # Use same date range as optimization for consistency
+        X, y, scaler_X, scaler_y, dates = fetch_apophis_data('2026-01-01', '2030-01-01')
         split_idx = int(0.8 * len(X))
         X_train, X_val = X[:split_idx], X[split_idx:]
         y_train, y_val = y[:split_idx], y[split_idx:]
@@ -135,7 +136,7 @@ def load_data():
 
 X_train, y_train, X_val, y_val, scaler_X, scaler_y, dates = load_data()
 
-def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=50, batch_size=32, lr=0.001):
+def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=100, batch_size=32, lr=0.0005):
     """Train LSTM model with progress tracking."""
     """Train LSTM model."""
     criterion = nn.MSELoss()
@@ -210,8 +211,9 @@ if X_train is not None:
                 
                 lstm_model = LSTMPredictor(
                     input_dim=X_train.shape[1],
-                    hidden_dim=64,
+                    hidden_dim=64,  # Optimal value from hyperparameter optimization
                     output_dim=3,
+                    dropout=0.0,  # Optimal value from hyperparameter optimization
                     quantization_bits=quantization_bits
                 )
                 
@@ -612,7 +614,7 @@ if X_train is not None:
                             st.write("  - Reducing LSTM epochs")
                             st.write("  - Lowering learning rate")
                             st.write("  - Adding dropout regularization")
-                    st.write(f"**Architecture**: 1 LSTM layer (64 hidden dims)")
+                    st.write(f"**Architecture**: 1 LSTM layer (64 hidden dims, dropout=0.0)")
                     if quantization_bits:
                         st.write(f"**Quantization**: {quantization_bits}-bit")
             
