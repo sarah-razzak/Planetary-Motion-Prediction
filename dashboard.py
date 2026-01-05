@@ -136,15 +136,6 @@ def load_data():
 
 X_train, y_train, X_val, y_val, scaler_X, scaler_y, dates = load_data()
 
-def create_scheduler_safe(optimizer):
-    """Safely create a learning rate scheduler, returning None if it fails."""
-    try:
-        return optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=5, verbose=False
-        )
-    except:
-        return None
-
 def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=150, batch_size=32, lr=0.0005):
     """Train LSTM model with progress tracking."""
     # Ensure model is in training mode and has parameters
@@ -156,17 +147,7 @@ def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=150, batch_si
         raise ValueError("Model has no trainable parameters")
     
     criterion = nn.MSELoss()
-    
-    # Create optimizer with error handling
-    try:
-        optimizer = optim.Adam(model.parameters(), lr=lr)
-    except Exception as e:
-        st.error(f"Failed to create optimizer: {e}")
-        raise
-    
-    # Learning rate scheduler to reduce LR when validation loss plateaus
-    # Make scheduler optional - if creation fails, continue without it
-    scheduler = create_scheduler_safe(optimizer)
+    optimizer = optim.Adam(model.parameters(), lr=lr)
     
     X_train_tensor = torch.FloatTensor(X_train)
     y_train_tensor = torch.FloatTensor(y_train)
@@ -212,10 +193,6 @@ def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=150, batch_si
             val_outputs = model(X_val_tensor)
             val_loss = criterion(val_outputs, y_val_tensor).item()
         val_losses.append(val_loss)
-        
-        # Learning rate scheduling
-        if scheduler is not None:
-            scheduler.step(val_loss)
         
         # Early stopping: save best model and check for improvement
         if val_loss < best_val_loss:
