@@ -136,6 +136,15 @@ def load_data():
 
 X_train, y_train, X_val, y_val, scaler_X, scaler_y, dates = load_data()
 
+def create_scheduler_safe(optimizer):
+    """Safely create a learning rate scheduler, returning None if it fails."""
+    try:
+        return optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.5, patience=5, verbose=False
+        )
+    except:
+        return None
+
 def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=150, batch_size=32, lr=0.0005):
     """Train LSTM model with progress tracking."""
     # Ensure model is in training mode and has parameters
@@ -147,16 +156,17 @@ def train_lstm_model(model, X_train, y_train, X_val, y_val, epochs=150, batch_si
         raise ValueError("Model has no trainable parameters")
     
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    
+    # Create optimizer with error handling
+    try:
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+    except Exception as e:
+        st.error(f"Failed to create optimizer: {e}")
+        raise
     
     # Learning rate scheduler to reduce LR when validation loss plateaus
-    # Wrap in try-except for compatibility
-    try:
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=False)
-    except Exception as e:
-        # If scheduler creation fails, continue without it
-        st.warning(f"Could not create learning rate scheduler: {e}. Continuing without scheduler.")
-        scheduler = None
+    # Make scheduler optional - if creation fails, continue without it
+    scheduler = create_scheduler_safe(optimizer)
     
     X_train_tensor = torch.FloatTensor(X_train)
     y_train_tensor = torch.FloatTensor(y_train)
