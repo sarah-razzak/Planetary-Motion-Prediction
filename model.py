@@ -311,7 +311,7 @@ class LSTMPredictor(nn.Module):
     """
     
     def __init__(self, input_dim: int = 7, hidden_dim: int = 64, output_dim: int = 3, 
-                 num_layers: int = 1, quantization_bits: int = None):
+                 num_layers: int = 1, quantization_bits: int = None, dropout: float = 0.2):
         """
         Initialize LSTM model.
         
@@ -325,16 +325,24 @@ class LSTMPredictor(nn.Module):
             Number of output dimensions (X, Y, Z)
         num_layers : int
             Number of LSTM layers
+        dropout : float
+            Dropout probability for regularization (helps prevent overfitting)
         """
         super(LSTMPredictor, self).__init__()
         
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.quantization_bits = quantization_bits
+        self.dropout = dropout
         
         # LSTM layer: processes sequences and maintains hidden state
         # The hidden state h_t captures the "memory" of previous positions and velocities
-        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
+        # Dropout is applied between LSTM layers (not after the last layer)
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, 
+                           dropout=dropout if num_layers > 1 else 0)
+        
+        # Dropout layer after LSTM (for regularization)
+        self.dropout_layer = nn.Dropout(dropout)
         
         # Linear head: maps hidden state to output position
         self.fc = nn.Linear(hidden_dim, output_dim)
