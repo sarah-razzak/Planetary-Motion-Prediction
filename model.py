@@ -389,6 +389,9 @@ class LSTMPredictor(nn.Module):
         # lstm_out[:, -1, :] extracts the hidden state at the last time step
         final_hidden = lstm_out[:, -1, :]
         
+        # Apply dropout for regularization (only during training)
+        final_hidden = self.dropout_layer(final_hidden)
+        
         # Linear transformation to output space
         output = self.fc(final_hidden)
         
