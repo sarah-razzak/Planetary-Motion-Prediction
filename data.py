@@ -259,18 +259,55 @@ def fetch_apophis_data(start_date='2026-01-01', end_date='2030-01-01'):
     X = data_array[:-1]  # All but last row
     y = data_array[1:, 1:4]  # X, Y, Z of next time step
     
-    # Normalize features and labels using StandardScaler
-    # This is crucial: without normalization, the gradient descent algorithm
-    # struggles with the different scales of time, position (AU), and velocity (AU/day).
-    # StandardScaler ensures all features contribute equally to the error surface.
-    # 
-    # NOTE: Each dimension is normalized independently, which is correct for Adaline.
-    # For LSTM, the position-velocity relationship is learned through the sequence model.
-    scaler_X = StandardScaler()
-    scaler_y = StandardScaler()
+    # HYBRID NORMALIZATION: Balance between Adaline and LSTM needs
+    # - Time: normalize independently (not physically related)
+    # - Position (X, Y, Z) and Velocity (VX, VY, VZ): fit scaler on combined data
+    #   This preserves the position-velocity relationship (v = dx/dt) while
+    #   keeping each dimension normalized independently (important for Adaline).
+    #
+    # By fitting the scaler on combined position+velocity data, we ensure
+    # they use the same scale factors, preserving their physical relationship.
     
-    X_scaled = scaler_X.fit_transform(X)
-    y_scaled = scaler_y.fit_transform(y)
+    # Extract components
+    time_feature = X[:, 0:1]  # Time (normalize separately)
+    positions = X[:, 1:4]  # X, Y, Z
+    velocities = X[:, 4:7]  # VX, VY, VZ
+    
+    # Normalize time independently
+    time_scaler = StandardScaler()
+    time_scaled = time_scaler.fit_transform(time_feature)
+    
+    # Fit position+velocity scaler on COMBINED data (preserves relationship)
+    # This ensures position and velocity use the same scale factors
+    pos_vel_combined = np.vstack([positions, velocities, y])
+    pos_vel_scaler = StandardScaler()
+    pos_vel_scaler.fit(pos_vel_combined)
+    
+    # Transform position and velocity separately (each dimension normalized independently)
+    # but using statistics from combined data (same scale factors)
+    positions_scaled = pos_vel_scaler.transform(positions)
+    velocities_scaled = pos_vel_scaler.transform(velocities)
+    y_scaled = pos_vel_scaler.transform(y)
+    
+    # Reconstruct X
+    X_scaled = np.hstack([time_scaled, positions_scaled, velocities_scaled])
+    
+    # Create scalers for inverse transform
+    scaler_X = StandardScaler()
+    scaler_X.fit(X)  # Fit on original for structure
+    # Override with hybrid normalization
+    scaler_X.mean_ = np.hstack([time_scaler.mean_.flatten(), 
+                                pos_vel_scaler.mean_[:3],  # X, Y, Z
+                                pos_vel_scaler.mean_[:3]])  # VX, VY, VZ
+    scaler_X.scale_ = np.hstack([time_scaler.scale_.flatten(), 
+                                 pos_vel_scaler.scale_[:3],  # X, Y, Z
+                                 pos_vel_scaler.scale_[:3]])  # VX, VY, VZ
+    
+    # y scaler uses position scaler
+    scaler_y = StandardScaler()
+    scaler_y.fit(y)
+    scaler_y.mean_ = pos_vel_scaler.mean_[:3]
+    scaler_y.scale_ = pos_vel_scaler.scale_[:3]
     
     print(f"Successfully fetched {len(X_scaled)} data points")
     print(f"Feature shape: {X_scaled.shape}")
